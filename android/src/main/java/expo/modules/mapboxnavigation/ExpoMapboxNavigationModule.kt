@@ -38,7 +38,8 @@ class ExpoMapboxNavigationModule : Module() {
               "onRouteChanged",
               "onUserOffRoute",
               "onRoutesLoaded",
-              "onRouteFailedToLoad"
+              "onRouteFailedToLoad",
+              "onMarkerPress"
       )
 
       Prop("coordinates") { view: ExpoMapboxNavigationView, coordinates: List<Map<String, Any>> ->
@@ -112,6 +113,10 @@ class ExpoMapboxNavigationModule : Module() {
 
       Prop("followingZoom") { view: ExpoMapboxNavigationView, followingZoom: Double? ->
         view.setFollowingZoom(followingZoom)
+      }
+
+      Prop("markers") { view: ExpoMapboxNavigationView, markers: List<Map<String, Any>>? ->
+        view.setMarkers(markers)
       }
 
       AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }

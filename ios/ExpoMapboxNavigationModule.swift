@@ -7,7 +7,7 @@ public class ExpoMapboxNavigationModule: Module {
     Name("ExpoMapboxNavigation")
 
     View(ExpoMapboxNavigationView.self) {
-      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad")
+      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad", "onMarkerPress")
 
       Prop("coordinates") { (view: ExpoMapboxNavigationView, coordinates: Array<Dictionary<String, Any>>) in
          var points: Array<CLLocationCoordinate2D> = []
@@ -82,6 +82,10 @@ public class ExpoMapboxNavigationModule: Module {
 
       Prop("followingZoom") { (view: ExpoMapboxNavigationView, followingZoom: Double?) in
         view.controller.setFollowingZoom(followingZoom: followingZoom)
+      }
+
+      Prop("markers") { (view: ExpoMapboxNavigationView, markers: Array<Dictionary<String, Any>>?) in
+        view.controller.setMarkers(markers: markers)
       }
 
       AsyncFunction("recenterMap") { (view: ExpoMapboxNavigationView) in

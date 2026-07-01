@@ -28,6 +28,31 @@ type Routes = {
   alternativeRoutes: Route[];
 };
 
+export type Marker = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  title?: string;
+  description?: string;
+  iconName?: string;
+  /**
+   * Color of the marker in hex format (e.g., "#1FBF8F") or rgb format (e.g., "rgb(31, 191, 143)")
+   * Default is red (#FF0000)
+   */
+  color?: string;
+  /**
+   * If true, allows navigating to this marker (shows "Navegar aquí" and uses navigation flow).
+   * If false, the marker is informational only and navigation to it is not offered.
+   * Default is false when omitted.
+   */
+  canNavigate?: boolean;
+  /**
+   * Letter shown on the marker icon (e.g. "P" for Parada, "S" for Stop).
+   * Use based on app language for authorized stops.
+   */
+  markerLetter?: string;
+};
+
 export type ExpoMapboxNavigationViewRef = {
   recenterMap: () => void;
 };
@@ -54,6 +79,14 @@ export type ExpoMapboxNavigationViewProps = {
   placeCustomRasterLayerAbove?: string;
   disableAlternativeRoutes?: boolean;
   followingZoom?: number;
+  /**
+   * Array of custom markers to display on the map during navigation.
+   */
+  markers?: Marker[];
+  /**
+   * Called when a marker is pressed.
+   */
+  onMarkerPress?: (event: { nativeEvent: Marker }) => void;
   onRouteProgressChanged?: (event: { nativeEvent: ProgressEvent }) => void;
   onCancelNavigation?: () => void;
   onWaypointArrival?: (event: {

@@ -35,6 +35,16 @@ import com.mapbox.maps.plugin.LocationPuck2D
 import com.mapbox.maps.plugin.animation.camera
 import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener
 import com.mapbox.maps.plugin.locationcomponent.location
+import com.mapbox.maps.plugin.annotation.annotations
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import androidx.core.content.ContextCompat
+import com.mapbox.api.directions.v5.DirectionsCriteria
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
 import com.mapbox.navigation.base.formatter.DistanceFormatterOptions
 import com.mapbox.navigation.base.route.NavigationRoute
@@ -64,10 +74,13 @@ import com.mapbox.navigation.tripdata.progress.model.EstimatedTimeToArrivalForma
 import com.mapbox.navigation.tripdata.progress.model.TimeRemainingFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateValue
+import com.mapbox.navigation.tripdata.speedlimit.api.MapboxSpeedInfoApi
 import com.mapbox.navigation.ui.base.util.MapboxNavigationConsumer
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverPrimaryOptions
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
 import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
+import android.graphics.drawable.GradientDrawable
+import android.widget.FrameLayout
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRecenterButton
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRouteOverviewButton
 import com.mapbox.navigation.ui.components.voice.view.MapboxSoundButton
@@ -127,6 +140,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var currentFollowingZoom: Double? = null
     private var vehicleMaxHeight: Double? = null
     private var vehicleMaxWidth: Double? = null
+    private var currentMarkers: List<Map<String, Any>>? = null
+    private var pointAnnotationManager: PointAnnotationManager? = null
 
     private val onRouteProgressChanged by EventDispatcher()
     private val onCancelNavigation by EventDispatcher()
@@ -136,6 +151,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val onUserOffRoute by EventDispatcher()
     private val onRoutesLoaded by EventDispatcher()
     private val onRouteFailedToLoad by EventDispatcher()
+    private val onMarkerPress by EventDispatcher()
 
     private val mapboxNavigation = MapboxNavigationApp.current()
     private var mapboxStyle: Style? = null
@@ -205,6 +221,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 onCancelNavigation(mapOf())
             }
 
+    private val speedLimitViewId = 8
+    private val speedLimitTextView = TextView(context)
+    private val speedLimitContainer = createSpeedLimitView(speedLimitViewId, parentConstraintLayout, speedLimitTextView)
+    private val speedInfoApi = MapboxSpeedInfoApi()
+
     private val parentConstraintSet =
             createAndApplyConstraintSet(
                     mapViewId = mapViewId,
@@ -214,6 +235,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     overviewButtonId = overviewButtonId,
                     recenterButtonId = recenterButtonId,
                     cancelButtonId = cancelButtonId,
+                    speedLimitViewId = speedLimitViewId,
                     constraintLayout = parentConstraintLayout
             )
 
@@ -291,7 +313,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     onRoutesReady(result.navigationRoutes)
                 }
                 override fun onCancel() {}
-                override fun failure(failure: MapMatchingFailure) {}
+                override fun failure(failure: MapMatchingFailure) {
+                    onRouteFailedToLoad(mapOf("errorMessage" to "Map Matching failed"))
+                }
             }
 
     private val routesObserver =
@@ -406,13 +430,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             object : LocationObserver {
                 override fun onNewLocationMatcherResult(
                         locationMatcherResult: LocationMatcherResult
-                ) {}
+                ) {
+                    // Update puck location with enhanced (map-matched) location
+                    val enhancedLocation = locationMatcherResult.enhancedLocation
+                    navigationLocationProvider.changePosition(
+                            location = enhancedLocation,
+                            keyPoints = locationMatcherResult.keyPoints,
+                    )
+
+                    // Update viewport data source with enhanced location
+                    viewportDataSource.onLocationChanged(enhancedLocation)
+                    viewportDataSource.evaluate()
+
+                    // Update speed limit display
+                    try {
+                        val speedInfo = speedInfoApi.updatePostedAndCurrentSpeed(
+                                locationMatcherResult,
+                                distanceFormatter
+                        )
+                        if (speedInfo != null && speedInfo.postedSpeed != null) {
+                            speedLimitTextView.text = speedInfo.postedSpeed.toString()
+                            speedLimitContainer.visibility = View.VISIBLE
+                        } else {
+                            speedLimitContainer.visibility = View.GONE
+                        }
+                    } catch (e: Exception) {
+                        speedLimitContainer.visibility = View.GONE
+                    }
+                }
                 override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
-                    // Update puck location
+                    // Also update from raw location as fallback
+                    // (e.g. before trip session starts or when map matching is unavailable)
                     navigationLocationProvider.changePosition(
                             location = rawLocation,
                     )
-                    // Update viewport data source
                     viewportDataSource.onLocationChanged(rawLocation)
                     viewportDataSource.evaluate()
                 }
@@ -602,6 +653,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
+    private fun createSpeedLimitView(id: Int, parent: ViewGroup, textView: TextView): FrameLayout {
+        val size = (64 * PIXEL_DENSITY).toInt()
+        val container = FrameLayout(context).apply {
+            setId(id)
+
+            // Circle background with red border (Vienna convention style)
+            val circleDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+                setStroke((3 * PIXEL_DENSITY).toInt(), Color.RED)
+            }
+            background = circleDrawable
+            elevation = 10f * PIXEL_DENSITY
+            visibility = View.GONE
+        }
+
+        // Speed limit text
+        textView.apply {
+            setTextColor(Color.BLACK)
+            textSize = 20f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+
+        container.addView(textView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+
+        val lp = ConstraintLayout.LayoutParams(size, size)
+        parent.addView(container, lp)
+        return container
+    }
+
     private fun createAndApplyConstraintSet(
             mapViewId: Int,
             maneuverViewId: Int,
@@ -610,6 +695,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             overviewButtonId: Int,
             recenterButtonId: Int,
             cancelButtonId: Int,
+            speedLimitViewId: Int,
             constraintLayout: ConstraintLayout
     ): ConstraintSet {
         return ConstraintSet().apply {
@@ -665,11 +751,30 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             constrainMinHeight(tripProgressViewId, (80 * PIXEL_DENSITY).toInt())
             constrainWidth(tripProgressViewId, ConstraintSet.MATCH_CONSTRAINT)
 
-            // Add SoundButton constraints
+            // Add SpeedLimitView constraints (above sound button, right side)
+            val speedLimitSize = (64 * PIXEL_DENSITY).toInt()
+            connect(
+                    speedLimitViewId,
+                    ConstraintSet.TOP,
+                    maneuverViewId,
+                    ConstraintSet.BOTTOM,
+                    (8 * PIXEL_DENSITY).toInt()
+            )
+            connect(
+                    speedLimitViewId,
+                    ConstraintSet.END,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.END,
+                    (16 * PIXEL_DENSITY).toInt()
+            )
+            constrainWidth(speedLimitViewId, speedLimitSize)
+            constrainHeight(speedLimitViewId, speedLimitSize)
+
+            // Add SoundButton constraints (below speed limit view)
             connect(
                     soundButtonId,
                     ConstraintSet.TOP,
-                    maneuverViewId,
+                    speedLimitViewId,
                     ConstraintSet.BOTTOM,
                     (8 * PIXEL_DENSITY).toInt()
             )
@@ -963,6 +1068,153 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         navigationCamera.requestNavigationCameraToFollowing()
     }
 
+    fun setMarkers(markers: List<Map<String, Any>>?) {
+        currentMarkers = markers
+        updateMarkers()
+    }
+
+    private fun updateMarkers() {
+        // Create annotation manager if it doesn't exist
+        if (pointAnnotationManager == null) {
+            pointAnnotationManager = mapView.annotations.createPointAnnotationManager()
+        }
+        
+        // Clear existing annotations
+        pointAnnotationManager?.deleteAll()
+        
+        val markers = currentMarkers ?: return
+        
+        // Store marker data for click handling
+        val markerDataMap = mutableMapOf<String, Map<String, Any>>()
+        
+        for ((index, marker) in markers.withIndex()) {
+            val lat = marker["latitude"] as? Double ?: continue
+            val lon = marker["longitude"] as? Double ?: continue
+            val iconName = marker["iconName"] as? String
+            val markerId = marker["id"] as? String ?: "marker-$index"
+            val colorString = marker["color"] as? String
+            
+            // Parse color (default to red)
+            val markerColor = parseColor(colorString) ?: Color.RED
+            
+            // Store marker data
+            markerDataMap[markerId] = marker
+            
+            val point = Point.fromLngLat(lon, lat)
+            
+            val pointAnnotationOptions = PointAnnotationOptions()
+                .withPoint(point)
+                .withData(com.google.gson.JsonPrimitive(markerId))
+            
+            // Try to load custom icon or use default marker
+            if (iconName != null) {
+                val resourceId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
+                if (resourceId != 0) {
+                    val drawable = ContextCompat.getDrawable(context, resourceId)
+                    if (drawable != null) {
+                        val bitmap = Bitmap.createBitmap(
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        pointAnnotationOptions.withIconImage(bitmap)
+                    }
+                }
+            } else {
+                val letter = (marker["markerLetter"] as? String)?.take(1) ?: "P"
+                val defaultBitmap = createDefaultMarkerBitmap(markerColor, letter)
+                pointAnnotationOptions.withIconImage(defaultBitmap)
+            }
+            
+            pointAnnotationManager?.create(pointAnnotationOptions)
+        }
+        
+        // Set click listener
+        pointAnnotationManager?.addClickListener { annotation ->
+            val markerId = annotation.getData()?.asString
+            if (markerId != null && markerDataMap.containsKey(markerId)) {
+                val markerData = markerDataMap[markerId]!!
+                onMarkerPress(markerData)
+            }
+            true
+        }
+
+    }
+
+    // Parse color from hex (#RRGGBB) or rgb(R, G, B) format
+    private fun parseColor(colorString: String?): Int? {
+        if (colorString == null) return null
+        
+        try {
+            // Handle hex format: #RRGGBB or #RGB
+            if (colorString.startsWith("#")) {
+                return Color.parseColor(colorString)
+            }
+            
+            // Handle rgb format: rgb(R, G, B)
+            if (colorString.lowercase().startsWith("rgb(")) {
+                val values = colorString
+                    .replace("rgb(", "", ignoreCase = true)
+                    .replace(")", "")
+                    .split(",")
+                    .map { it.trim().toInt() }
+                
+                if (values.size == 3) {
+                    return Color.rgb(values[0], values[1], values[2])
+                }
+            }
+        } catch (e: Exception) {
+            // Return null if parsing fails
+        }
+        return null
+    }
+
+    /**
+     * Crea un marcador por defecto: círculo con borde blanco, relleno de color y letra centrada.
+     * La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
+     */
+    private fun createDefaultMarkerBitmap(markerColor: Int = Color.RED, letter: String = "P"): Bitmap {
+        val size = (56 * PIXEL_DENSITY).toInt()
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = size / 2f
+        val cy = size / 2f
+        val radius = (size / 2f) - (4 * PIXEL_DENSITY)
+
+        val strokePaint = Paint().apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 3 * PIXEL_DENSITY
+            isAntiAlias = true
+        }
+        canvas.drawCircle(cx, cy, radius, strokePaint)
+
+        val fillPaint = Paint().apply {
+            color = markerColor
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        canvas.drawCircle(cx, cy, radius - strokePaint.strokeWidth / 2f, fillPaint)
+
+        val text = letter.take(1).ifEmpty { "P" }
+        val textPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 18 * PIXEL_DENSITY
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            isAntiAlias = true
+            textAlign = Paint.Align.CENTER
+        }
+        val bounds = android.graphics.Rect()
+        textPaint.getTextBounds(text, 0, text.length, bounds)
+        val textY = cy + (bounds.height() / 2f) - bounds.bottom
+        canvas.drawText(text, cx, textY, textPaint)
+
+        return bitmap
+    }
+
     fun addCustomRasterLayer() {
         val style = mapboxMap.getStyle() ?: return
 
@@ -1009,11 +1261,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 mapboxStyle = style
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
+                updateMarkers()
             }
         } else {
             mapboxMap.getStyle { style: Style ->
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
+                updateMarkers()
             }
         }
 
@@ -1053,6 +1307,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         .coordinatesList(currentCoordinates!!)
                         .steps(true)
                         .voiceInstructions(true)
+                        .annotationsList(
+                                listOf(
+                                        DirectionsCriteria.ANNOTATION_SPEED,
+                                        DirectionsCriteria.ANNOTATION_MAXSPEED,
+                                        DirectionsCriteria.ANNOTATION_CONGESTION_NUMERIC,
+                                        DirectionsCriteria.ANNOTATION_DISTANCE
+                                )
+                        )
                         .language(currentLocale.toLanguageTag())
                         .maxHeight(vehicleMaxHeight ?: null)
                         .maxWidth(vehicleMaxWidth ?: null)

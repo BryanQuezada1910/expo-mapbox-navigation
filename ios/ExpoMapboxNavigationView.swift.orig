@@ -15,7 +15,6 @@ class ExpoMapboxNavigationView: ExpoView {
     private let onUserOffRoute = EventDispatcher()
     private let onRoutesLoaded = EventDispatcher()
     private let onRouteFailedToLoad = EventDispatcher()
-    private let onMarkerPress = EventDispatcher()
 
     let controller = ExpoMapboxNavigationViewController()
 
@@ -32,7 +31,6 @@ class ExpoMapboxNavigationView: ExpoView {
         controller.onUserOffRoute = onUserOffRoute
         controller.onRoutesLoaded = onRoutesLoaded
         controller.onRouteFailedToLoad = onRouteFailedToLoad
-        controller.onMarkerPress = onMarkerPress
     }
 
     override func layoutSubviews() {
@@ -64,8 +62,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var isUsingRouteMatchingApi: Bool = false
     var vehicleMaxHeight: Double? = nil
     var vehicleMaxWidth: Double? = nil
-    var currentMarkers: Array<Dictionary<String, Any>>? = nil
-    var pointAnnotationManager: PointAnnotationManager? = nil
 
     var onRouteProgressChanged: EventDispatcher? = nil
     var onCancelNavigation: EventDispatcher? = nil
@@ -75,7 +71,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var onUserOffRoute: EventDispatcher? = nil
     var onRoutesLoaded: EventDispatcher? = nil
     var onRouteFailedToLoad: EventDispatcher? = nil
-    var onMarkerPress: EventDispatcher? = nil
 
     var calculateRoutesTask: Task<Void, Error>? = nil
     private var routeProgressCancellable: AnyCancellable? = nil
@@ -306,135 +301,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
     }
 
-    func setMarkers(markers: Array<Dictionary<String, Any>>?) {
-        currentMarkers = markers
-        updateMarkers()
-    }
-
-    func updateMarkers() {
-        guard let navigationMapView = navigationViewController?.navigationMapView else { return }
-        
-        // Create annotation manager if it doesn't exist
-        if pointAnnotationManager == nil {
-            pointAnnotationManager = navigationMapView.mapView.annotations.makePointAnnotationManager()
-            // Set delegate for tap handling
-            pointAnnotationManager?.delegate = self
-        }
-        
-        // Clear existing annotations
-        pointAnnotationManager?.annotations = []
-        
-        guard let markers = currentMarkers else { return }
-        
-        var annotations: [PointAnnotation] = []
-        
-        for (index, marker) in markers.enumerated() {
-            guard let lat = marker["latitude"] as? Double,
-                  let lon = marker["longitude"] as? Double else {
-                continue
-            }
-            
-            let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
-            var annotation = PointAnnotation(id: marker["id"] as? String ?? "marker-\(index)", coordinate: coordinate)
-            
-            // Store marker data in userInfo using JSON encoding
-            if let jsonData = try? JSONSerialization.data(withJSONObject: marker),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-                annotation.userInfo = ["markerData": jsonString]
-            }
-            
-            // Get marker color (default to red)
-            let markerColor = parseColor(from: marker["color"] as? String) ?? .red
-            
-            // Set marker icon (círculo con letra: "P" Parada / "S" Stop según idioma)
-            if let iconName = marker["iconName"] as? String, let image = UIImage(named: iconName) {
-                annotation.image = .init(image: image, name: iconName)
-            } else {
-                let letter = (marker["markerLetter"] as? String).map { String($0.prefix(1)) } ?? "P"
-                let stopImage = makeStopMarkerImage(color: markerColor, letter: letter, size: 56)
-                if let img = stopImage {
-                    let colorHex = markerColor.toHexString()
-                    annotation.image = .init(image: img, name: "stop-\(letter)-\(colorHex)")
-                }
-            }
-            
-            annotation.iconSize = 1.0
-            annotations.append(annotation)
-        }
-        
-        pointAnnotationManager?.annotations = annotations
-    }
-    
-    /// Genera imagen de marcador: círculo con borde blanco, relleno del color y letra centrada.
-    /// La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
-    func makeStopMarkerImage(color: UIColor, letter: String, size: CGFloat) -> UIImage? {
-        let strokeWidth: CGFloat = 3
-        let letterChar = String((letter.isEmpty ? "P" : String(letter.prefix(1))))
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
-        let image = renderer.image { ctx in
-            let rect = CGRect(x: strokeWidth / 2, y: strokeWidth / 2, width: size - strokeWidth, height: size - strokeWidth)
-            ctx.cgContext.setFillColor(color.cgColor)
-            ctx.cgContext.fillEllipse(in: rect)
-            ctx.cgContext.setStrokeColor(UIColor.white.cgColor)
-            ctx.cgContext.setLineWidth(strokeWidth)
-            ctx.cgContext.strokeEllipse(in: rect)
-            let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.alignment = .center
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.boldSystemFont(ofSize: size * 0.4),
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: paragraphStyle
-            ]
-            let textSize = letterChar.size(withAttributes: attrs)
-            let textRect = CGRect(x: (size - textSize.width) / 2, y: (size - textSize.height) / 2 - 1, width: textSize.width, height: textSize.height)
-            letterChar.draw(in: textRect, withAttributes: attrs)
-        }
-        return image
-    }
-    
-    // Helper function to parse color from string (hex or rgb format)
-    func parseColor(from colorString: String?) -> UIColor? {
-        guard let colorString = colorString else { return nil }
-        
-        // Handle hex format: #RRGGBB or #RGB
-        if colorString.hasPrefix("#") {
-            var hexString = colorString.dropFirst()
-            if hexString.count == 3 {
-                hexString = hexString.map { "\($0)\($0)" }.joined()[...]
-            }
-            if hexString.count == 6 {
-                var rgbValue: UInt64 = 0
-                Scanner(string: String(hexString)).scanHexInt64(&rgbValue)
-                return UIColor(
-                    red: CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0,
-                    green: CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0,
-                    blue: CGFloat(rgbValue & 0x0000FF) / 255.0,
-                    alpha: 1.0
-                )
-            }
-        }
-        
-        // Handle rgb format: rgb(R, G, B)
-        if colorString.lowercased().hasPrefix("rgb(") {
-            let values = colorString
-                .replacingOccurrences(of: "rgb(", with: "")
-                .replacingOccurrences(of: ")", with: "")
-                .split(separator: ",")
-                .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-            
-            if values.count == 3 {
-                return UIColor(
-                    red: CGFloat(values[0]) / 255.0,
-                    green: CGFloat(values[1]) / 255.0,
-                    blue: CGFloat(values[2]) / 255.0,
-                    alpha: 1.0
-                )
-            }
-        }
-        
-        return nil
-    }
-    
     func update(){
         calculateRoutesTask?.cancel()
 
@@ -605,7 +471,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 try navigationMapView!.mapView.mapboxMap.localizeLabels(into: self.currentLocale)
             } catch {}
             self.addCustomRasterLayer()
-            self.updateMarkers()
         })
         
 
@@ -640,30 +505,6 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
         _ navigationViewController: NavigationViewController,
         byCanceling canceled: Bool
     ) { }
-}
-
-extension ExpoMapboxNavigationViewController: AnnotationInteractionDelegate {
-    func annotationManager(_ manager: AnnotationManager, didDetectTappedAnnotations annotations: [Annotation]) {
-        guard let pointAnnotation = annotations.first as? PointAnnotation else { return }
-        
-        // Extract marker data from userInfo
-        if let markerDataString = pointAnnotation.userInfo?["markerData"] as? String,
-           let markerData = markerDataString.data(using: .utf8),
-           let markerDict = try? JSONSerialization.jsonObject(with: markerData) as? [String: Any] {
-            onMarkerPress?(markerDict)
-        }
-    }
-}
-
-extension UIColor {
-    func toHexString() -> String {
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        var a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return String(format: "%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-    }
 }
 
 extension UIView {
