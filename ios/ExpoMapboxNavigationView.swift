@@ -43,7 +43,7 @@ class ExpoMapboxNavigationView: ExpoView {
 
 
 class ExpoMapboxNavigationViewController: UIViewController {
-    let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
+    static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
     var mapboxNavigation: MapboxNavigation? = nil
     var routingProvider: RoutingProvider? = nil
     var navigation: NavigationController? = nil
@@ -86,7 +86,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     init() {
         super.init(nibName: nil, bundle: nil)
-        mapboxNavigation = self.navigationProvider.mapboxNavigation
+        mapboxNavigation = ExpoMapboxNavigationViewController.navigationProvider.mapboxNavigation
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
@@ -160,6 +160,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
         sessionCancellable?.cancel()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        Task { @MainActor in self.tripSession?.startFreeDrive() }
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -284,7 +289,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func setIsMuted(isMuted: Bool?){
         if(isMuted != nil){
-            self.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
+            ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
         }
     }
 
@@ -563,8 +568,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let navigationOptions = NavigationOptions(
             mapboxNavigation: self.mapboxNavigation!,
-            voiceController: self.navigationProvider.routeVoiceController,
-            eventsManager: self.navigationProvider.eventsManager(),
+            voiceController: ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController,
+            eventsManager: ExpoMapboxNavigationViewController.navigationProvider.eventsManager(),
             styles: [DayStyle()],
             topBanner: topBanner,
             bottomBanner: bottomBanner
