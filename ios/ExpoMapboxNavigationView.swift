@@ -348,9 +348,18 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
+        var matchProfile: ProfileIdentifier? = nil
+        if let currentProfile = currentRouteProfile {
+            if currentProfile == "driving-traffic" {
+                matchProfile = .automobile
+            } else {
+                matchProfile = ProfileIdentifier(rawValue: currentProfile)
+            }
+        }
+
         let matchOptions = NavigationMatchOptions(
             waypoints: waypoints, 
-            profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
+            profileIdentifier: matchProfile,
             queryItems: [URLQueryItem(name: "exclude", value: currentRouteExcludeList?.joined(separator: ","))],
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
         )

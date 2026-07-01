@@ -1088,7 +1088,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
 
         if (currentRouteProfile != null) {
-            optionsBuilder = optionsBuilder.profile(currentRouteProfile!!)
+            var matchProfile = currentRouteProfile!!
+            if (matchProfile == "driving-traffic" || matchProfile == "mapbox/driving-traffic") {
+                matchProfile = "driving"
+            }
+            optionsBuilder = optionsBuilder.profile(matchProfile)
         }
 
         currentMapMatchingRequestId =
