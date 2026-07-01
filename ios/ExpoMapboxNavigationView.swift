@@ -43,7 +43,7 @@ class ExpoMapboxNavigationView: ExpoView {
 
 
 class ExpoMapboxNavigationViewController: UIViewController {
-    static let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
+    let navigationProvider: MapboxNavigationProvider = MapboxNavigationProvider(coreConfig: CoreConfig(routingConfig: RoutingConfig(fasterRouteDetectionConfig: Optional<FasterRouteDetectionConfig>.none),locationSource: .live ))
     var mapboxNavigation: MapboxNavigation? = nil
     var routingProvider: RoutingProvider? = nil
     var navigation: NavigationController? = nil
@@ -86,7 +86,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     init() {
         super.init(nibName: nil, bundle: nil)
-        mapboxNavigation = ExpoMapboxNavigationViewController.navigationProvider.mapboxNavigation
+        mapboxNavigation = self.navigationProvider.mapboxNavigation
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
@@ -284,7 +284,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func setIsMuted(isMuted: Bool?){
         if(isMuted != nil){
-            ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
+            self.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
         }
     }
 
@@ -504,10 +504,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
         calculateRoutesTask = Task {
             switch await self.routingProvider!.calculateRoutes(options: matchOptions).result {
             case .failure(let error):
-                onRouteFailedToLoad?([
-                    "errorMessage": error.localizedDescription
-                ])
-                print(error.localizedDescription)
+                print("Map matching failed: \(error.localizedDescription). Falling back to regular routing...")
+                self.calculateRoutes(waypoints: waypoints)
             case .success(let navigationRoutes):
                 onRoutesCalculated(navigationRoutes: navigationRoutes)
             }
@@ -565,8 +563,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let navigationOptions = NavigationOptions(
             mapboxNavigation: self.mapboxNavigation!,
-            voiceController: ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController,
-            eventsManager: ExpoMapboxNavigationViewController.navigationProvider.eventsManager(),
+            voiceController: self.navigationProvider.routeVoiceController,
+            eventsManager: self.navigationProvider.eventsManager(),
             styles: [DayStyle()],
             topBanner: topBanner,
             bottomBanner: bottomBanner

@@ -314,7 +314,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 }
                 override fun onCancel() {}
                 override fun failure(failure: MapMatchingFailure) {
-                    onRouteFailedToLoad(mapOf("errorMessage" to "Map Matching failed"))
+                    android.util.Log.e("Mapbox", "Map matching failed: ${failure.message}. Falling back to regular routing...")
+                    requestRoutes()
                 }
             }
 
@@ -893,6 +894,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         mapboxNavigation?.registerArrivalObserver(arrivalObserver)
         mapboxNavigation?.registerOffRouteObserver(offRouteObserver)
         mapView.location.addOnIndicatorPositionChangedListener(onIndicatorPositionChangedListener)
+        mapboxNavigation?.startTripSession(withForegroundService = false)
     }
 
     override fun onDetachedFromWindow() {
