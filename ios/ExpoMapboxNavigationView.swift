@@ -36,6 +36,7 @@ class ExpoMapboxNavigationView: ExpoView {
     }
 
     override func layoutSubviews() {
+        super.layoutSubviews()
         controller.view.frame = bounds
     }
 }
