@@ -24,15 +24,15 @@
     "expo-mapbox-navigation",
     "ExpoMapboxNavigation"
   ],
-  "repository": "https://github.com/uju777/expo-mapbox-navigation",
+  "repository": "https://github.com/BryanQuezada1910/expo-mapbox-navigation",
   "bugs": {
-    "url": "https://github.com/uju777/expo-mapbox-navigation/issues"
+    "url": "https://github.com/BryanQuezada1910/expo-mapbox-navigation/issues"
   },
-  "author": "uju777 <manager@badatgil.com> (https://github.com/uju777)",
+  "author": "BryanQuezada1910 <[EMAIL_ADDRESS]> (https://github.com/BryanQuezada1910)",
   "license": "MIT",
-  "homepage": "https://github.com/uju777/expo-mapbox-navigation#readme",
+  "homepage": "https://github.com/BryanQuezada1910/expo-mapbox-navigation#readme",
   "dependencies": {},
-  "devDependencies": {
+  "devDependencies": {  
     "@types/react": "^18.0.25",
     "expo-module-scripts": "^3.5.2",
     "expo-modules-core": "~2.5.0",
