@@ -314,7 +314,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 }
                 override fun onCancel() {}
                 override fun failure(failure: MapMatchingFailure) {
-                    android.util.Log.e("Mapbox", "Map matching failed: ${failure.message}. Falling back to regular routing...")
+                    android.util.Log.e("Mapbox", "Map matching failed: ${failure.toString()}. Falling back to regular routing...")
                     requestRoutes()
                 }
             }
