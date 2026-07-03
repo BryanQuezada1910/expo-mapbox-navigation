@@ -35,6 +35,23 @@ class ExpoMapboxNavigationView: ExpoView {
         controller.onMarkerPress = onMarkerPress
     }
 
+    deinit {
+        // Nil out all event dispatchers before this ExpoFabricView is released.
+        // The controller's Combine subscriptions may still fire briefly after this;
+        // with nil dispatchers every optional call (e.g. onRouteProgressChanged?()) becomes
+        // a safe no-op instead of logging "Cannot dispatch an event while the managing
+        // ExpoFabricView is deallocated".
+        controller.onRouteProgressChanged = nil
+        controller.onCancelNavigation = nil
+        controller.onWaypointArrival = nil
+        controller.onFinalDestinationArrival = nil
+        controller.onRouteChanged = nil
+        controller.onUserOffRoute = nil
+        controller.onRoutesLoaded = nil
+        controller.onRouteFailedToLoad = nil
+        controller.onMarkerPress = nil
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         controller.view.frame = bounds
@@ -91,6 +108,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
+
+        setupSubscriptions()
+    }
+
+    private func setupSubscriptions() {
+        // Cancel any existing subscriptions before re-subscribing to avoid duplicates.
+        routeProgressCancellable?.cancel()
+        waypointArrivalCancellable?.cancel()
+        reroutingCancellable?.cancel()
+        sessionCancellable?.cancel()
 
         routeProgressCancellable = navigation!.routeProgress.sink { [weak self] progressState in
             guard let self = self else { return }
@@ -157,7 +184,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 default: break
             }
         }
-
     }
 
     deinit {
@@ -175,8 +201,29 @@ class ExpoMapboxNavigationViewController: UIViewController {
         Task { @MainActor in self.tripSession?.startFreeDrive() }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Re-subscribe after returning from another tab (subscriptions were
+        // cancelled in viewDidDisappear to prevent events dispatching to a
+        // deallocated ExpoFabricView).
+        setupSubscriptions()
+    }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        // Cancel all Combine subscriptions so they stop dispatching events
+        // to the (potentially already deallocated) ExpoFabricView.
+        // They will be re-created on the next mount via init().
+        routeProgressCancellable?.cancel()
+        routeProgressCancellable = nil
+        waypointArrivalCancellable?.cancel()
+        waypointArrivalCancellable = nil
+        reroutingCancellable?.cancel()
+        reroutingCancellable = nil
+        sessionCancellable?.cancel()
+        sessionCancellable = nil
+        updateDebounceTimer?.invalidate()
+        updateDebounceTimer = nil
+        calculateRoutesTask?.cancel()
         Task { @MainActor in tripSession?.setToIdle() } // Stops navigation
     }
 
