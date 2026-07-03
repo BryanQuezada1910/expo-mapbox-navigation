@@ -79,6 +79,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var onMarkerPress: EventDispatcher? = nil
 
     var calculateRoutesTask: Task<Void, Error>? = nil
+    private var updateDebounceTimer: Timer? = nil
     private var routeProgressCancellable: AnyCancellable? = nil
     private var waypointArrivalCancellable: AnyCancellable? = nil
     private var reroutingCancellable: AnyCancellable? = nil
@@ -161,6 +162,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     deinit {
         calculateRoutesTask?.cancel()
+        updateDebounceTimer?.invalidate()
+        updateDebounceTimer = nil
         routeProgressCancellable?.cancel()
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
@@ -447,6 +450,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
     
     func update(){
+        // Debounce: React Native sends props one-by-one in rapid succession.
+        // Wait 80 ms so all props settle before firing a single Mapbox API call.
+        updateDebounceTimer?.invalidate()
+        updateDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            self.performUpdate()
+        }
+    }
+
+    func performUpdate(){
         calculateRoutesTask?.cancel()
 
         if(currentCoordinates != nil){
