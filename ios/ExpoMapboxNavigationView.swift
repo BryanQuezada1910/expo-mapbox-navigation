@@ -4,8 +4,30 @@ import MapboxMaps
 import MapboxNavigationUIKit
 import MapboxDirections
 import Combine
+import ObjectiveC
 
+private let swizzleBundleOnce: Void = {
+    let originalSelector = #selector(Bundle.localizedString(forKey:value:table:))
+    let swizzledSelector = #selector(Bundle.customLocalizedString(forKey:value:table:))
+    guard let originalMethod = class_getInstanceMethod(Bundle.self, originalSelector),
+          let swizzledMethod = class_getInstanceMethod(Bundle.self, swizzledSelector) else { return }
+    method_exchangeImplementations(originalMethod, swizzledMethod)
+}()
 
+extension Bundle {
+    @objc func customLocalizedString(forKey key: String, value: String?, table tableName: String?) -> String {
+        guard let language = UserDefaults.standard.stringArray(forKey: "AppleLanguages")?.first else {
+            return self.customLocalizedString(forKey: key, value: value, table: tableName)
+        }
+        // Intentar encontrar el bundle específico (ej: es-MX) o el base (ej: es)
+        if let path = self.path(forResource: language, ofType: "lproj") ?? self.path(forResource: String(language.prefix(2)), ofType: "lproj"),
+           let languageBundle = Bundle(path: path) {
+            return languageBundle.customLocalizedString(forKey: key, value: value, table: tableName)
+        } else {
+            return self.customLocalizedString(forKey: key, value: value, table: tableName)
+        }
+    }
+}
 class ExpoMapboxNavigationView: ExpoView {
     private let onRouteProgressChanged = EventDispatcher()
     private let onCancelNavigation = EventDispatcher()
@@ -21,6 +43,7 @@ class ExpoMapboxNavigationView: ExpoView {
 
     required init(appContext: AppContext? = nil) {
         super.init(appContext: appContext)
+        _ = swizzleBundleOnce
         clipsToBounds = true
         addSubview(controller.view)
 
