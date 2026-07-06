@@ -20,8 +20,15 @@ extension Bundle {
             return self.customLocalizedString(forKey: key, value: value, table: tableName)
         }
         // Intentar encontrar el bundle específico (ej: es-MX) o el base (ej: es)
-        if let path = self.path(forResource: language, ofType: "lproj") ?? self.path(forResource: String(language.prefix(2)), ofType: "lproj"),
-           let languageBundle = Bundle(path: path) {
+        var path = self.path(forResource: language, ofType: "lproj") 
+            ?? self.path(forResource: String(language.prefix(2)), ofType: "lproj")
+            
+        // Mapbox usa en-US en lugar de en
+        if path == nil && language.hasPrefix("en") {
+            path = self.path(forResource: "en-US", ofType: "lproj")
+        }
+        
+        if let validPath = path, let languageBundle = Bundle(path: validPath) {
             return languageBundle.customLocalizedString(forKey: key, value: value, table: tableName)
         } else {
             return self.customLocalizedString(forKey: key, value: value, table: tableName)
@@ -111,6 +118,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var vehicleMaxWidth: Double? = nil
     var currentMarkers: Array<Dictionary<String, Any>>? = nil
     var pointAnnotationManager: PointAnnotationManager? = nil
+    var _forceRecreateNavigationController: Bool = false
 
     /// Callback for dispatching events back to the ExpoView.
     /// This closure captures the ExpoView weakly, so when the view is
@@ -278,12 +286,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func setLocale(locale: String?) {
+        let previousLocale = currentLocale.identifier
         if(locale != nil){
             currentLocale = Locale(identifier: locale!)
         } else {
             currentLocale = Locale.current
         }
-        UserDefaults.standard.set([currentLocale.languageCode ?? currentLocale.identifier], forKey: "AppleLanguages")
+        if previousLocale != currentLocale.identifier {
+            _forceRecreateNavigationController = true
+        }
+        UserDefaults.standard.set([currentLocale.identifier], forKey: "AppleLanguages")
         UserDefaults.standard.synchronize()
         update()
     }
@@ -631,13 +643,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
             bottomBanner: bottomBanner
         )
 
-        let newNavigationControllerRequired = navigationViewController == nil
+        let newNavigationControllerRequired = navigationViewController == nil || _forceRecreateNavigationController
 
         if(newNavigationControllerRequired){
+            if let oldVC = navigationViewController {
+                oldVC.willMove(toParent: nil)
+                oldVC.view.removeFromSuperview()
+                oldVC.removeFromParent()
+            }
             navigationViewController = NavigationViewController(
                 navigationRoutes: navigationRoutes,
                 navigationOptions: navigationOptions
             )
+            _forceRecreateNavigationController = false
         } else {
             navigationViewController!.prepareViewLoading(
                 navigationRoutes: navigationRoutes,
