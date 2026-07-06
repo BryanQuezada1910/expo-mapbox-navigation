@@ -24,15 +24,37 @@ class ExpoMapboxNavigationView: ExpoView {
         clipsToBounds = true
         addSubview(controller.view)
 
-        controller.onRouteProgressChanged = onRouteProgressChanged
-        controller.onCancelNavigation = onCancelNavigation
-        controller.onWaypointArrival = onWaypointArrival
-        controller.onFinalDestinationArrival = onFinalDestinationArrival
-        controller.onRouteChanged = onRouteChanged
-        controller.onUserOffRoute = onUserOffRoute
-        controller.onRoutesLoaded = onRoutesLoaded
-        controller.onRouteFailedToLoad = onRouteFailedToLoad
-        controller.onMarkerPress = onMarkerPress
+        // Use a closure that captures self weakly to dispatch events.
+        // When this ExpoView is deallocated, the weak reference becomes nil
+        // and the EventDispatcher's internal handler (which also holds
+        // a [weak self] to the ExpoFabricView) won't be called at all,
+        // preventing the "Cannot dispatch an event while the managing
+        // ExpoFabricView is deallocated" warning.
+        controller.onEvent = { [weak self] eventName, payload in
+            guard let self = self else { return }
+            switch eventName {
+            case "onRouteProgressChanged":
+                self.onRouteProgressChanged(payload)
+            case "onCancelNavigation":
+                self.onCancelNavigation(payload)
+            case "onWaypointArrival":
+                self.onWaypointArrival(payload)
+            case "onFinalDestinationArrival":
+                self.onFinalDestinationArrival(payload)
+            case "onRouteChanged":
+                self.onRouteChanged(payload)
+            case "onUserOffRoute":
+                self.onUserOffRoute(payload)
+            case "onRoutesLoaded":
+                self.onRoutesLoaded(payload)
+            case "onRouteFailedToLoad":
+                self.onRouteFailedToLoad(payload)
+            case "onMarkerPress":
+                self.onMarkerPress(payload)
+            default:
+                break
+            }
+        }
     }
 
     override func layoutSubviews() {
@@ -67,15 +89,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var currentMarkers: Array<Dictionary<String, Any>>? = nil
     var pointAnnotationManager: PointAnnotationManager? = nil
 
-    var onRouteProgressChanged: EventDispatcher? = nil
-    var onCancelNavigation: EventDispatcher? = nil
-    var onWaypointArrival: EventDispatcher? = nil
-    var onFinalDestinationArrival: EventDispatcher? = nil
-    var onRouteChanged: EventDispatcher? = nil
-    var onUserOffRoute: EventDispatcher? = nil
-    var onRoutesLoaded: EventDispatcher? = nil
-    var onRouteFailedToLoad: EventDispatcher? = nil
-    var onMarkerPress: EventDispatcher? = nil
+    /// Callback for dispatching events back to the ExpoView.
+    /// This closure captures the ExpoView weakly, so when the view is
+    /// deallocated, calling this becomes a safe no-op and the
+    /// EventDispatcher's internal handler (which holds a weak ref to the
+    /// ExpoFabricView) is never invoked.
+    var onEvent: ((String, [String: Any]) -> Void)?
 
     var calculateRoutesTask: Task<Void, Error>? = nil
     private var updateDebounceTimer: Timer? = nil
@@ -118,7 +137,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                     value: "#FFFFFF" 
                 )
                 
-               self.onRouteProgressChanged?([
+               self.onEvent?("onRouteProgressChanged", [
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
                     "durationRemaining": progressState!.routeProgress.durationRemaining,
@@ -130,14 +149,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable = navigation!.waypointsArrival.sink { arrivalStatus in
             let event = arrivalStatus.event
             if event is WaypointArrivalStatus.Events.ToFinalDestination {
-                self.onFinalDestinationArrival?()
+                self.onEvent?("onFinalDestinationArrival", [:])
             } else if event is WaypointArrivalStatus.Events.ToWaypoint {
-                self.onWaypointArrival?()
+                self.onEvent?("onWaypointArrival", [:])
             }
         }
 
         reroutingCancellable = navigation!.rerouting.sink { rerouteStatus in
-            self.onRouteChanged?()            
+            self.onEvent?("onRouteChanged", [:])
         }
 
         sessionCancellable = tripSession!.session.sink { session in 
@@ -146,7 +165,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 case .activeGuidance(let activeGuidanceState):
                     switch(activeGuidanceState){
                         case .offRoute:
-                            self.onUserOffRoute?()
+                            self.onEvent?("onUserOffRoute", [:])
                         default: break
                     }
                 default: break
@@ -489,12 +508,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
         calculateRoutesTask = Task {
             switch await self.routingProvider!.calculateRoutes(options: routeOptions).result {
             case .failure(let error):
-                onRouteFailedToLoad?([
+                self.onEvent?("onRouteFailedToLoad", [
                     "errorMessage": error.localizedDescription
                 ])
                 print(error.localizedDescription)
             case .success(let navigationRoutes):
-                onRoutesCalculated(navigationRoutes: navigationRoutes)
+                self.onRoutesCalculated(navigationRoutes: navigationRoutes)
             }
         }
     }
@@ -524,13 +543,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 print("Map matching failed: \(error.localizedDescription). Falling back to regular routing...")
                 self.calculateRoutes(waypoints: waypoints)
             case .success(let navigationRoutes):
-                onRoutesCalculated(navigationRoutes: navigationRoutes)
+                self.onRoutesCalculated(navigationRoutes: navigationRoutes)
             }
         }
     }
 
     @objc func cancelButtonClicked(_ sender: AnyObject?) {
-        onCancelNavigation?()
+        onEvent?("onCancelNavigation", [:])
     }
 
     func convertRoute(route: Route) -> Any {
@@ -565,7 +584,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func onRoutesCalculated(navigationRoutes: NavigationRoutes){
-        onRoutesLoaded?([
+        onEvent?("onRoutesLoaded", [
             "routes": [
                 "mainRoute": convertRoute(route: navigationRoutes.mainRoute.route),
                 "alternativeRoutes": navigationRoutes.alternativeRoutes.map { convertRoute(route: $0.route) }
@@ -644,7 +663,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 }
 extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
     func navigationViewController(_ navigationViewController: NavigationViewController, didRerouteAlong route: Route) {
-        onRoutesLoaded?([
+        onEvent?("onRoutesLoaded", [
             "routes": [
                 "mainRoute": convertRoute(route: route),
                 "alternativeRoutes": []
@@ -666,7 +685,7 @@ extension ExpoMapboxNavigationViewController: AnnotationInteractionDelegate {
         if let markerDataString = pointAnnotation.userInfo?["markerData"] as? String,
            let markerData = markerDataString.data(using: .utf8),
            let markerDict = try? JSONSerialization.jsonObject(with: markerData) as? [String: Any] {
-            onMarkerPress?(markerDict)
+            onEvent?("onMarkerPress", markerDict)
         }
     }
 }
