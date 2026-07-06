@@ -35,16 +35,7 @@ class ExpoMapboxNavigationView: ExpoView {
         controller.onMarkerPress = onMarkerPress
     }
 
-    deinit {
-        // Fully tear down the controller: cancel all Combine subscriptions and
-        // nil-out every event dispatcher *before* the ExpoFabricView is released.
-        // This prevents the "Cannot dispatch an event while the managing
-        // ExpoFabricView is deallocated" warnings.
-        controller.tearDown()
-    }
-
     override func layoutSubviews() {
-        super.layoutSubviews()
         controller.view.frame = bounds
     }
 }
@@ -86,10 +77,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var onRouteFailedToLoad: EventDispatcher? = nil
     var onMarkerPress: EventDispatcher? = nil
 
-    /// When false, all event dispatching is suppressed.
-    /// Managed by viewDidAppear / viewDidDisappear / tearDown.
-    private var isActive: Bool = false
-
     var calculateRoutesTask: Task<Void, Error>? = nil
     private var updateDebounceTimer: Timer? = nil
     private var routeProgressCancellable: AnyCancellable? = nil
@@ -104,18 +91,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
 
-        setupSubscriptions()
-    }
-
-    private func setupSubscriptions() {
-        // Cancel any existing subscriptions before re-subscribing to avoid duplicates.
-        routeProgressCancellable?.cancel()
-        waypointArrivalCancellable?.cancel()
-        reroutingCancellable?.cancel()
-        sessionCancellable?.cancel()
-
-        routeProgressCancellable = navigation!.routeProgress.sink { [weak self] progressState in
-            guard let self = self, self.isActive else { return }
+        routeProgressCancellable = navigation!.routeProgress.sink { progressState in
             if(progressState != nil){
 
 
@@ -151,8 +127,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
         }
 
-        waypointArrivalCancellable = navigation!.waypointsArrival.sink { [weak self] arrivalStatus in
-            guard let self = self, self.isActive else { return }
+        waypointArrivalCancellable = navigation!.waypointsArrival.sink { arrivalStatus in
             let event = arrivalStatus.event
             if event is WaypointArrivalStatus.Events.ToFinalDestination {
                 self.onFinalDestinationArrival?()
@@ -161,13 +136,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
         }
 
-        reroutingCancellable = navigation!.rerouting.sink { [weak self] rerouteStatus in
-            guard let self = self, self.isActive else { return }
+        reroutingCancellable = navigation!.rerouting.sink { rerouteStatus in
             self.onRouteChanged?()            
         }
 
-        sessionCancellable = tripSession!.session.sink { [weak self] session in 
-            guard let self = self, self.isActive else { return } 
+        sessionCancellable = tripSession!.session.sink { session in 
             let state = session.state
             switch state {
                 case .activeGuidance(let activeGuidanceState):
@@ -179,44 +152,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 default: break
             }
         }
-    }
 
-    /// Cancels all Combine subscriptions, timers, and tasks, and nils-out
-    /// all event dispatchers so no further events can be dispatched.
-    /// Called from ExpoMapboxNavigationView.deinit and from this controller's own deinit.
-    func tearDown() {
-        isActive = false
-        cancelAllSubscriptions()
-        onRouteProgressChanged = nil
-        onCancelNavigation = nil
-        onWaypointArrival = nil
-        onFinalDestinationArrival = nil
-        onRouteChanged = nil
-        onUserOffRoute = nil
-        onRoutesLoaded = nil
-        onRouteFailedToLoad = nil
-        onMarkerPress = nil
-    }
-
-    /// Cancels Combine subscriptions, the route-calculation Task, and the
-    /// debounce timer without touching the event dispatchers.
-    private func cancelAllSubscriptions() {
-        calculateRoutesTask?.cancel()
-        calculateRoutesTask = nil
-        updateDebounceTimer?.invalidate()
-        updateDebounceTimer = nil
-        routeProgressCancellable?.cancel()
-        routeProgressCancellable = nil
-        waypointArrivalCancellable?.cancel()
-        waypointArrivalCancellable = nil
-        reroutingCancellable?.cancel()
-        reroutingCancellable = nil
-        sessionCancellable?.cancel()
-        sessionCancellable = nil
     }
 
     deinit {
-        tearDown()
+        calculateRoutesTask?.cancel()
+        updateDebounceTimer?.invalidate()
+        routeProgressCancellable?.cancel()
+        waypointArrivalCancellable?.cancel()
+        reroutingCancellable?.cancel()
+        sessionCancellable?.cancel()
     }
 
     override func viewDidLoad() {
@@ -224,21 +169,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
         Task { @MainActor in self.tripSession?.startFreeDrive() }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        // Mark active BEFORE re-subscribing so newly created sinks are allowed
-        // to dispatch events.
-        isActive = true
-        setupSubscriptions()
-    }
-
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        // Mark inactive FIRST — any sink callback that fires between this
-        // point and the actual cancel() call below will early-return.
-        isActive = false
-        cancelAllSubscriptions()
-        Task { @MainActor in tripSession?.setToIdle() }
+        Task { @MainActor in tripSession?.setToIdle() } // Stops navigation
     }
 
     required init?(coder aDecoder: NSCoder) {
