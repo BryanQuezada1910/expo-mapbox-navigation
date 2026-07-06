@@ -260,6 +260,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
         } else {
             currentLocale = Locale.current
         }
+        UserDefaults.standard.set([currentLocale.languageCode ?? currentLocale.identifier], forKey: "AppleLanguages")
+        UserDefaults.standard.synchronize()
         update()
     }
 

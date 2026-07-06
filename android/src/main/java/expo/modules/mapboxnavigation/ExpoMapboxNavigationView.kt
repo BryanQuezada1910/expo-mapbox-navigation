@@ -990,6 +990,15 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         currentLocale =
                 if (localeStr == null || localeStr == "default") Locale.getDefault()
                 else Locale.Builder().setLanguageTag(localeStr).build()
+
+        try {
+            val config = context.resources.configuration
+            config.setLocale(currentLocale)
+            context.resources.updateConfiguration(config, context.resources.displayMetrics)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
         update()
     }
 
