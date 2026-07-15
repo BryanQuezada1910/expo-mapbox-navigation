@@ -419,14 +419,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 formatter.getTimeRemaining(update.totalTimeRemaining)
                         tripProgressDistanceRemainingTextView.text =
                                 formatter.getDistanceRemaining(update.distanceRemaining)
-                        val etaCalendar = update.estimatedTimeToArrival
-                        if (etaCalendar != null) {
-                            val sdf = java.text.SimpleDateFormat("h:mm a", currentLocale)
-                            tripProgressArrivalTimeTextView.text = sdf.format(etaCalendar.time)
-                        } else {
-                            tripProgressArrivalTimeTextView.text =
-                                    formatter.getEstimatedTimeToArrival(update.estimatedTimeToArrival)
-                        }
+                        tripProgressArrivalTimeTextView.text =
+                                formatter.getEstimatedTimeToArrival(update.estimatedTimeToArrival)
                     }
 
                     // Send progress event
@@ -1337,7 +1331,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 TripProgressUpdateFormatter.Builder(context)
                         .distanceRemainingFormatter(DistanceRemainingFormatter(distanceFormatter))
                         .timeRemainingFormatter(TimeRemainingFormatter(context, currentLocale))
-                        .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context))
+                        .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context, 0))
                         .build()
         tripProgressApi = MapboxTripProgressApi(tripProgressFormatter)
 
