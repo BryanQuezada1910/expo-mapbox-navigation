@@ -88,6 +88,14 @@ public class ExpoMapboxNavigationModule: Module {
         view.controller.setMarkers(markers: markers)
       }
 
+      Prop("bottomLegend") { (view: ExpoMapboxNavigationView, text: String?) in
+        view.controller.setBottomLegend(legend: text)
+      }
+
+      Prop("showCancelButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowCancelButton(show: show)
+      }
+
       AsyncFunction("recenterMap") { (view: ExpoMapboxNavigationView) in
         view.controller.recenterMap()
       }

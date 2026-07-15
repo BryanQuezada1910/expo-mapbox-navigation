@@ -119,6 +119,14 @@ class ExpoMapboxNavigationModule : Module() {
         view.setMarkers(markers)
       }
 
+      Prop("bottomLegend") { view: ExpoMapboxNavigationView, text: String? ->
+        view.setBottomLegend(text)
+      }
+
+      Prop("showCancelButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowCancelButton(show)
+      }
+
       AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }
     }
   }

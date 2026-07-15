@@ -183,13 +183,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val tripProgressTimeRemainingTextView = createCenteredTextView()
     private val tripProgressDistanceRemainingTextView = createCenteredTextView()
     private val tripProgressArrivalTimeTextView = createCenteredTextView()
+    private val tripProgressLegendTextView = createCenteredTextView().apply {
+        textSize = 12f // 12sp
+        setTextColor(Color.WHITE)
+        setBackgroundColor(Color.parseColor("#99000000")) // Semi-transparent black
+        setPadding((12 * PIXEL_DENSITY).toInt(), (4 * PIXEL_DENSITY).toInt(), (12 * PIXEL_DENSITY).toInt(), (4 * PIXEL_DENSITY).toInt())
+        visibility = View.GONE
+    }
     private val tripProgressView =
             createTripProgressView(
                     id = tripProgressViewId,
                     parent = parentConstraintLayout,
                     tripProgressTimeRemainingTextView = tripProgressTimeRemainingTextView,
                     tripProgressDistanceRemainingTextView = tripProgressDistanceRemainingTextView,
-                    tripProgressArrivalTimeTextView = tripProgressArrivalTimeTextView
+                    tripProgressArrivalTimeTextView = tripProgressArrivalTimeTextView,
+                    tripProgressLegendTextView = tripProgressLegendTextView
             )
 
     private val soundButtonId = 4
@@ -411,8 +419,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 formatter.getTimeRemaining(update.totalTimeRemaining)
                         tripProgressDistanceRemainingTextView.text =
                                 formatter.getDistanceRemaining(update.distanceRemaining)
-                        tripProgressArrivalTimeTextView.text =
-                                formatter.getEstimatedTimeToArrival(update.estimatedTimeToArrival)
+                        val etaCalendar = update.estimatedTimeToArrival
+                        if (etaCalendar != null) {
+                            val sdf = java.text.SimpleDateFormat("h:mm a", currentLocale)
+                            tripProgressArrivalTimeTextView.text = sdf.format(etaCalendar.time)
+                        } else {
+                            tripProgressArrivalTimeTextView.text =
+                                    formatter.getEstimatedTimeToArrival(update.estimatedTimeToArrival)
+                        }
                     }
 
                     // Send progress event
@@ -557,7 +571,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             parent: ViewGroup,
             tripProgressTimeRemainingTextView: TextView,
             tripProgressDistanceRemainingTextView: TextView,
-            tripProgressArrivalTimeTextView: TextView
+            tripProgressArrivalTimeTextView: TextView,
+            tripProgressLegendTextView: TextView
     ): LinearLayout {
         return LinearLayout(context).apply {
             setId(id)
@@ -575,6 +590,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
                     (40 * PIXEL_DENSITY).toInt()
+            )
+
+            // Contenedor para la leyenda (centrado y pequeño)
+            val legendContainer = LinearLayout(context).apply {
+                setGravity(Gravity.CENTER)
+                addView(
+                    tripProgressLegendTextView,
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT
+                )
+            }
+            addView(
+                legendContainer,
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT
             )
 
             val bottomContainer =
@@ -1153,6 +1183,23 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             true
         }
 
+    }
+
+    fun setBottomLegend(legend: String?) {
+        if (legend.isNullOrEmpty()) {
+            tripProgressLegendTextView.visibility = View.GONE
+        } else {
+            tripProgressLegendTextView.text = legend
+            tripProgressLegendTextView.visibility = View.VISIBLE
+        }
+    }
+
+    fun setShowCancelButton(show: Boolean?) {
+        if (show == false) {
+            cancelButton.visibility = View.GONE
+        } else {
+            cancelButton.visibility = View.VISIBLE
+        }
     }
 
     // Parse color from hex (#RRGGBB) or rgb(R, G, B) format

@@ -80,6 +80,15 @@ export type ExpoMapboxNavigationViewProps = {
   disableAlternativeRoutes?: boolean;
   followingZoom?: number;
   /**
+   * Determina si se muestra el botón de cancelar navegación.
+   * Por defecto es true.
+   */
+  showCancelButton?: boolean;
+  /**
+   * Texto a mostrar en la parte inferior sobre o dentro del banner nativo
+   */
+  bottomLegend?: string;
+  /**
    * Array of custom markers to display on the map during navigation.
    */
   markers?: Marker[];

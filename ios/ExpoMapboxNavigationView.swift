@@ -119,6 +119,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var currentMarkers: Array<Dictionary<String, Any>>? = nil
     var pointAnnotationManager: PointAnnotationManager? = nil
     var _forceRecreateNavigationController: Bool = false
+    var bottomLegendLabel: UILabel? = nil
+    var showCancelButton: Bool = true
 
     /// Callback for dispatching events back to the ExpoView.
     /// This closure captures the ExpoView weakly, so when the view is
@@ -373,6 +375,17 @@ class ExpoMapboxNavigationViewController: UIViewController {
     func setMarkers(markers: Array<Dictionary<String, Any>>?) {
         currentMarkers = markers
         updateMarkers()
+    }
+
+    func setBottomLegend(legend: String?){
+        DispatchQueue.main.async {
+            self.bottomLegendLabel?.text = legend
+            self.bottomLegendLabel?.isHidden = legend == nil || legend!.isEmpty
+        }
+    }
+
+    func setShowCancelButton(show: Bool?){
+        showCancelButton = show ?? true
     }
 
     func updateMarkers() {
@@ -633,6 +646,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         let bottomBanner = BottomBannerViewController()
         bottomBanner.distanceFormatter.locale = currentLocale
         bottomBanner.dateFormatter.locale = currentLocale
+        bottomBanner.dateFormatter.dateFormat = "h:mm a"
 
         let navigationOptions = NavigationOptions(
             mapboxNavigation: self.mapboxNavigation!,
@@ -689,6 +703,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
+        
+        if !showCancelButton {
+            cancelButton.isHidden = true
+        }
 
         navigationViewController.delegate = self
         addChild(navigationViewController)
@@ -700,6 +718,32 @@ class ExpoMapboxNavigationViewController: UIViewController {
             navigationViewController.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
             navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
         ])
+        
+        // Add bottom legend label if it doesn't exist
+        if bottomLegendLabel == nil {
+            let label = UILabel()
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.textColor = .white
+            label.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
+            label.textAlignment = .center
+            label.backgroundColor = UIColor(white: 0.0, alpha: 0.6) // Semi-transparent black
+            label.layer.cornerRadius = 12
+            label.layer.masksToBounds = true
+            
+            // Add padding by subclassing or just adjusting insets, but for simplicity we will just let intrinsic size work
+            // Since we can't easily add padding to a standard UILabel, we will just add constraints for height and width or wrap in a view
+            // To make it simple, we just use the label itself with a fixed height and side padding
+            
+            bottomLegendLabel = label
+            navigationViewController.view.addSubview(label)
+            
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: navigationViewController.view.centerXAnchor),
+                label.bottomAnchor.constraint(equalTo: navigationViewController.navigationView.bottomBannerContainerView.topAnchor, constant: -10),
+                label.heightAnchor.constraint(equalToConstant: 24)
+            ])
+        }
+
         didMove(toParent: self)
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
     }
