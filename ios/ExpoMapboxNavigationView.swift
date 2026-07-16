@@ -732,16 +732,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
         if bottomLegendLabel == nil {
             let label = UILabel()
             label.translatesAutoresizingMaskIntoConstraints = false
-            label.textColor = .white
-            label.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
+            label.textColor = UIColor.darkGray
+            label.font = UIFont.systemFont(ofSize: 12, weight: .regular)
             label.textAlignment = .center
-            label.backgroundColor = UIColor(white: 0.0, alpha: 0.6) // Semi-transparent black
-            label.layer.cornerRadius = 12
-            label.layer.masksToBounds = true
-            
-            // Add padding by subclassing or just adjusting insets, but for simplicity we will just let intrinsic size work
-            // Since we can't easily add padding to a standard UILabel, we will just add constraints for height and width or wrap in a view
-            // To make it simple, we just use the label itself with a fixed height and side padding
+            label.backgroundColor = .clear
             
             bottomLegendLabel = label
             navigationViewController.view.addSubview(label)

@@ -185,9 +185,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val tripProgressArrivalTimeTextView = createCenteredTextView()
     private val tripProgressLegendTextView = createCenteredTextView().apply {
         textSize = 12f // 12sp
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.parseColor("#99000000")) // Semi-transparent black
-        setPadding((12 * PIXEL_DENSITY).toInt(), (4 * PIXEL_DENSITY).toInt(), (12 * PIXEL_DENSITY).toInt(), (4 * PIXEL_DENSITY).toInt())
+        setTextColor(Color.parseColor("#808080")) // Gray text
+        setPadding(0, (2 * PIXEL_DENSITY).toInt(), 0, (2 * PIXEL_DENSITY).toInt())
         visibility = View.GONE
     }
     private val tripProgressView =
@@ -577,47 +576,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     (5 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
-                    (5 * PIXEL_DENSITY).toInt()
+                    (8 * PIXEL_DENSITY).toInt() // Bottom padding
+            )
+
+            // Leyenda al principio (arriba de todo)
+            addView(
+                tripProgressLegendTextView,
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT
             )
 
             addView(
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
-                    (40 * PIXEL_DENSITY).toInt()
-            )
-
-            // Contenedor para la leyenda (centrado y pequeño)
-            val legendContainer = LinearLayout(context).apply {
-                setGravity(Gravity.CENTER)
-                addView(
-                    tripProgressLegendTextView,
-                    LayoutParams.WRAP_CONTENT,
                     LayoutParams.WRAP_CONTENT
-                )
-            }
-            addView(
-                legendContainer,
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT
             )
 
             val bottomContainer =
                     LinearLayout(context).apply {
                         setOrientation(LinearLayout.HORIZONTAL)
-                        setGravity(Gravity.CENTER)
                         addView(
                                 tripProgressDistanceRemainingTextView,
-                                (60 * PIXEL_DENSITY).toInt(),
-                                (20 * PIXEL_DENSITY).toInt()
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                         )
                         addView(
                                 tripProgressArrivalTimeTextView,
-                                (60 * PIXEL_DENSITY).toInt(),
-                                (20 * PIXEL_DENSITY).toInt()
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                         )
                     }
 
-            addView(bottomContainer, LayoutParams.MATCH_PARENT, (20 * PIXEL_DENSITY).toInt())
+            addView(
+                    bottomContainer,
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
+            )
         }
     }
 
