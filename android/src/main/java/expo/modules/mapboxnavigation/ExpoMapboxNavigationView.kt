@@ -180,9 +180,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val maneuverView = createManueverView(maneuverViewId, parentConstraintLayout)
 
     private val tripProgressViewId = 3
-    private val tripProgressTimeRemainingTextView = createCenteredTextView()
+    private val tripProgressTimeRemainingTextView = createLeftTextView()
     private val tripProgressDistanceRemainingTextView = createCenteredTextView()
-    private val tripProgressArrivalTimeTextView = createCenteredTextView()
+    private val tripProgressArrivalTimeTextView = createRightTextView()
     private val tripProgressLegendTextView = createCenteredTextView().apply {
         textSize = 12f // 12sp
         setTextColor(Color.parseColor("#808080")) // Gray text
@@ -556,7 +556,15 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     private fun createCenteredTextView(): TextView {
-        return TextView(context).apply { setGravity(Gravity.CENTER) }
+        return TextView(context).apply { gravity = Gravity.CENTER }
+    }
+
+    private fun createLeftTextView(): TextView {
+        return TextView(context).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
+    }
+
+    private fun createRightTextView(): TextView {
+        return TextView(context).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
     }
 
     private fun createTripProgressView(
@@ -570,47 +578,32 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         return LinearLayout(context).apply {
             setId(id)
             parent.addView(this)
-            setOrientation(LinearLayout.VERTICAL)
+            setOrientation(LinearLayout.HORIZONTAL)
             setBackgroundColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
             setPadding(
-                    (8 * PIXEL_DENSITY).toInt(),
-                    (14 * PIXEL_DENSITY).toInt(), // Más padding superior para que no se corte el texto grande
-                    (8 * PIXEL_DENSITY).toInt(),
-                    (16 * PIXEL_DENSITY).toInt() // Bottom padding extra para safe area
+                    (12 * PIXEL_DENSITY).toInt(), // izquierda
+                    (10 * PIXEL_DENSITY).toInt(), // arriba
+                    (12 * PIXEL_DENSITY).toInt(), // derecha
+                    (16 * PIXEL_DENSITY).toInt()  // abajo (safe area)
             )
 
-            // Leyenda al principio (arriba de todo)
-            addView(
-                tripProgressLegendTextView,
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT
-            )
-
-            // WRAP_CONTENT en lugar de altura fija para que el texto grande nunca se corte
+            // Columna izquierda: tiempo restante (grande, alineado a la izquierda)
             addView(
                     tripProgressTimeRemainingTextView,
-                    LayoutParams.MATCH_PARENT,
-                    LayoutParams.WRAP_CONTENT
+                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 2f) // peso 2 = más ancho
             )
 
-            val bottomContainer =
-                    LinearLayout(context).apply {
-                        setOrientation(LinearLayout.HORIZONTAL)
-                        setPadding(0, (4 * PIXEL_DENSITY).toInt(), 0, 0)
-                        addView(
-                                tripProgressDistanceRemainingTextView,
-                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-                        )
-                        addView(
-                                tripProgressArrivalTimeTextView,
-                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
-                        )
-                    }
-
+            // Columna central: distancia restante
             addView(
-                    bottomContainer,
-                    LayoutParams.MATCH_PARENT,
-                    LayoutParams.WRAP_CONTENT
+                    tripProgressDistanceRemainingTextView,
+                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.5f)
+            )
+
+            // Columna derecha: hora de llegada
+            addView(
+                    tripProgressArrivalTimeTextView,
+                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.5f)
             )
         }
     }
