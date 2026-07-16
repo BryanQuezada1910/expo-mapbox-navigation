@@ -573,10 +573,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             setOrientation(LinearLayout.VERTICAL)
             setBackgroundColor(Color.WHITE)
             setPadding(
-                    (5 * PIXEL_DENSITY).toInt(),
-                    (10 * PIXEL_DENSITY).toInt(),
-                    (5 * PIXEL_DENSITY).toInt(),
-                    (15 * PIXEL_DENSITY).toInt() // Bottom padding extra
+                    (8 * PIXEL_DENSITY).toInt(),
+                    (14 * PIXEL_DENSITY).toInt(), // Más padding superior para que no se corte el texto grande
+                    (8 * PIXEL_DENSITY).toInt(),
+                    (16 * PIXEL_DENSITY).toInt() // Bottom padding extra para safe area
             )
 
             // Leyenda al principio (arriba de todo)
@@ -586,15 +586,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 LayoutParams.WRAP_CONTENT
             )
 
+            // WRAP_CONTENT en lugar de altura fija para que el texto grande nunca se corte
             addView(
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
-                    (60 * PIXEL_DENSITY).toInt() // 60dp fijos para alojar los spans grandes sin recortar
+                    LayoutParams.WRAP_CONTENT
             )
 
             val bottomContainer =
                     LinearLayout(context).apply {
                         setOrientation(LinearLayout.HORIZONTAL)
+                        setPadding(0, (4 * PIXEL_DENSITY).toInt(), 0, 0)
                         addView(
                                 tripProgressDistanceRemainingTextView,
                                 LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
@@ -765,8 +767,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     ConstraintSet.PARENT_ID,
                     ConstraintSet.END
             )
-            constrainMinHeight(tripProgressViewId, (80 * PIXEL_DENSITY).toInt())
+            constrainMinHeight(tripProgressViewId, (110 * PIXEL_DENSITY).toInt()) // Altura mínima mayor para que quepan tiempo + distancia + ETA
             constrainWidth(tripProgressViewId, ConstraintSet.MATCH_CONSTRAINT)
+            constrainHeight(tripProgressViewId, ConstraintSet.WRAP_CONTENT) // Permitir que crezca si el contenido lo necesita
 
             // Add SpeedLimitView constraints (above sound button, right side)
             val speedLimitSize = (64 * PIXEL_DENSITY).toInt()
