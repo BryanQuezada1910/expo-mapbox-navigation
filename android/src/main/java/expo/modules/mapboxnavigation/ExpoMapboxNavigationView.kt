@@ -574,9 +574,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             setBackgroundColor(Color.WHITE)
             setPadding(
                     (5 * PIXEL_DENSITY).toInt(),
+                    (10 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
-                    (5 * PIXEL_DENSITY).toInt(),
-                    (8 * PIXEL_DENSITY).toInt() // Bottom padding
+                    (15 * PIXEL_DENSITY).toInt() // Bottom padding extra
             )
 
             // Leyenda al principio (arriba de todo)
@@ -589,7 +589,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             addView(
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
-                    LayoutParams.WRAP_CONTENT
+                    (60 * PIXEL_DENSITY).toInt() // 60dp fijos para alojar los spans grandes sin recortar
             )
 
             val bottomContainer =
