@@ -572,11 +572,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             parent.addView(this)
             setOrientation(LinearLayout.VERTICAL)
             setBackgroundColor(Color.WHITE)
+            // Bottom padding accounts for system navigation bar
+            val navBarHeight = getNavigationBarHeight(context)
             setPadding(
                     (5 * PIXEL_DENSITY).toInt(),
                     (10 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
-                    (15 * PIXEL_DENSITY).toInt() // Bottom padding extra
+                    (15 * PIXEL_DENSITY).toInt() + navBarHeight
             )
 
             // Leyenda al principio (arriba de todo)
@@ -589,7 +591,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             addView(
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
-                    (60 * PIXEL_DENSITY).toInt() // 60dp fijos para alojar los spans grandes sin recortar
+                    LayoutParams.WRAP_CONTENT
             )
 
             val bottomContainer =
@@ -765,7 +767,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     ConstraintSet.PARENT_ID,
                     ConstraintSet.END
             )
-            constrainMinHeight(tripProgressViewId, (80 * PIXEL_DENSITY).toInt())
+            constrainHeight(tripProgressViewId, ConstraintSet.WRAP_CONTENT)
             constrainWidth(tripProgressViewId, ConstraintSet.MATCH_CONSTRAINT)
 
             // Add SpeedLimitView constraints (above sound button, right side)
@@ -1406,5 +1408,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         optionsBuilder.build(),
                         mapMatchingRequestCallback
                 )
+    }
+
+    private fun getNavigationBarHeight(context: Context): Int {
+        val resourceId = context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) {
+            context.resources.getDimensionPixelSize(resourceId)
+        } else {
+            (24 * PIXEL_DENSITY).toInt() // Fallback: 24dp
+        }
     }
 }
