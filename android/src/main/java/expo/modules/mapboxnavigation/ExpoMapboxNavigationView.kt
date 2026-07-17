@@ -581,7 +581,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     (5 * PIXEL_DENSITY).toInt(),
                     (10 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
-                    (15 * PIXEL_DENSITY).toInt() + navBarHeight
+                    (8 * PIXEL_DENSITY).toInt() + navBarHeight / 2
             )
 
             // Leyenda al principio (arriba de todo)
