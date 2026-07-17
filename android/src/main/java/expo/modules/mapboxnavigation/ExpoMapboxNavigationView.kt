@@ -180,7 +180,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val maneuverView = createManueverView(maneuverViewId, parentConstraintLayout)
 
     private val tripProgressViewId = 3
-    private val tripProgressTimeRemainingTextView = createCenteredTextView()
+    private val tripProgressTimeRemainingTextView = createCenteredTextView().apply {
+        minHeight = (48 * PIXEL_DENSITY).toInt() // Ensure large spanned text is not clipped
+        includeFontPadding = true
+    }
     private val tripProgressDistanceRemainingTextView = createCenteredTextView()
     private val tripProgressArrivalTimeTextView = createCenteredTextView()
     private val tripProgressLegendTextView = createCenteredTextView().apply {
