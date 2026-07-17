@@ -595,6 +595,22 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
     }
 
+    private func getProfileIdentifier(from profile: String?, forMapMatching: Bool = false) -> ProfileIdentifier? {
+        guard let profile = profile else { return nil }
+        switch profile {
+        case "driving", "mapbox/driving":
+            return .automobile
+        case "driving-traffic", "mapbox/driving-traffic":
+            return forMapMatching ? .automobile : .automobileAvoidingTraffic
+        case "walking", "mapbox/walking":
+            return .walking
+        case "cycling", "mapbox/cycling":
+            return .cycling
+        default:
+            return ProfileIdentifier(rawValue: profile)
+        }
+    }
+
     func calculateRoutes(waypoints: Array<Waypoint>){
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "max_height", value: String(format: "%.1f", vehicleMaxHeight ?? 0.0)),
@@ -606,7 +622,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             
         let routeOptions = NavigationRouteOptions(
             waypoints: waypoints, 
-            profileIdentifier: currentRouteProfile != nil ? ProfileIdentifier(rawValue: currentRouteProfile!) : nil,
+            profileIdentifier: getProfileIdentifier(from: currentRouteProfile),
             queryItems: queryItems,
             locale: currentLocale, 
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
@@ -626,14 +642,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func calculateMapMatchingRoutes(waypoints: Array<Waypoint>){
-        var matchProfile: ProfileIdentifier? = nil
-        if let currentProfile = currentRouteProfile {
-            if currentProfile == "driving-traffic" {
-                matchProfile = .automobile
-            } else {
-                matchProfile = ProfileIdentifier(rawValue: currentProfile)
-            }
-        }
+        let matchProfile = getProfileIdentifier(from: currentRouteProfile, forMapMatching: true)
 
         var matchQueryItems: [URLQueryItem] = []
         if let excludes = currentRouteExcludeList, !excludes.isEmpty {
