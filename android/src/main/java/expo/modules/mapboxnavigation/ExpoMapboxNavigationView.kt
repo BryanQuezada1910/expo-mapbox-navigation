@@ -47,6 +47,7 @@ import androidx.core.content.ContextCompat
 import com.mapbox.api.directions.v5.DirectionsCriteria
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
 import com.mapbox.navigation.base.formatter.DistanceFormatterOptions
+import com.mapbox.navigation.base.formatter.UnitType
 import com.mapbox.navigation.base.route.NavigationRoute
 import com.mapbox.navigation.base.route.NavigationRouterCallback
 import com.mapbox.navigation.base.route.RouterFailure
@@ -264,6 +265,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeArrowView = MapboxRouteArrowView(routeArrowOptions)
 
     private val distanceFormatter = DistanceFormatterOptions.Builder(context).build()
+    private val metricDistanceFormatter = DistanceFormatterOptions.Builder(context).unitType(UnitType.METRIC).build()
+    private val imperialDistanceFormatter = DistanceFormatterOptions.Builder(context).unitType(UnitType.IMPERIAL).build()
+
+    private fun isUS(lat: Double, lon: Double): Boolean {
+        if (lat > 32.72) return true
+        if (lat < 25.83) return false
+        val borderLat = when {
+            lon < -117.10 -> 32.53
+            lon < -106.48 -> 32.53 + (31.76 - 32.53) * ((lon - -117.10) / (-106.48 - -117.10))
+            lon < -97.43 -> 31.76 + (25.89 - 31.76) * ((lon - -106.48) / (-97.43 - -106.48))
+            else -> 25.89
+        }
+        return lat >= borderLat
+    }
+
     private var maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
 
     private var tripProgressFormatter =
@@ -455,12 +471,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
                     // Update speed limit display
                     try {
+                        val lat = enhancedLocation.latitude
+                        val lon = enhancedLocation.longitude
+                        val inUS = isUS(lat, lon)
+                        val speedLimitFormatter = if (inUS) imperialDistanceFormatter else metricDistanceFormatter
+
                         val speedInfo = speedInfoApi.updatePostedAndCurrentSpeed(
                                 locationMatcherResult,
-                                distanceFormatter
+                                speedLimitFormatter
                         )
                         if (speedInfo != null && speedInfo.postedSpeed != null) {
-                            speedLimitTextView.text = speedInfo.postedSpeed.toString()
+                            val unitStr = if (inUS) "mph" else "km/h"
+                            speedLimitTextView.text = "${speedInfo.postedSpeed}\n$unitStr"
+                            // reduce text size slightly when unit is included to ensure it fits the circle
+                            speedLimitTextView.textSize = 16f
                             speedLimitContainer.visibility = View.VISIBLE
                         } else {
                             speedLimitContainer.visibility = View.GONE

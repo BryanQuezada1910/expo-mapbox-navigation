@@ -170,6 +170,44 @@ class ExpoMapboxNavigationViewController: UIViewController {
                     value: "#FFFFFF" 
                 )
                 
+                // Add Speed Limit Label Logic
+                DispatchQueue.main.async {
+                    if let speedLimitView = self.navigationViewController?.view.findViews(subclassOf: SpeedLimitView.self).first,
+                       let parentView = self.navigationViewController?.view {
+                        var unitLabel = parentView.viewWithTag(999) as? UILabel
+                        if unitLabel == nil {
+                            unitLabel = UILabel()
+                            unitLabel!.tag = 999
+                            unitLabel!.font = UIFont.systemFont(ofSize: 12, weight: .bold)
+                            unitLabel!.backgroundColor = UIColor.white.withAlphaComponent(0.9)
+                            unitLabel!.layer.cornerRadius = 4
+                            unitLabel!.clipsToBounds = true
+                            unitLabel!.textColor = .black
+                            unitLabel!.textAlignment = .center
+                            unitLabel!.translatesAutoresizingMaskIntoConstraints = false
+                            
+                            parentView.addSubview(unitLabel!)
+                            
+                            NSLayoutConstraint.activate([
+                                unitLabel!.centerXAnchor.constraint(equalTo: speedLimitView.centerXAnchor),
+                                unitLabel!.topAnchor.constraint(equalTo: speedLimitView.bottomAnchor, constant: 2),
+                                unitLabel!.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
+                                unitLabel!.heightAnchor.constraint(equalToConstant: 16)
+                            ])
+                        }
+                        
+                        if speedLimitView.speedLimit != nil && !speedLimitView.isHidden && speedLimitView.alpha > 0 {
+                            if let location = self.navigationViewController?.navigationMapView?.mapView.location.latestLocation?.coordinate {
+                                let inUS = self.isUS(lat: location.latitude, lon: location.longitude)
+                                unitLabel!.text = inUS ? "mph" : "km/h"
+                            }
+                            unitLabel!.isHidden = false
+                        } else {
+                            unitLabel!.isHidden = true
+                        }
+                    }
+                }
+                
                self.onEvent?("onRouteProgressChanged", [
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
@@ -229,6 +267,21 @@ class ExpoMapboxNavigationViewController: UIViewController {
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
         fatalError("This controller should not be loaded through a story board")
+    }
+
+    func isUS(lat: Double, lon: Double) -> Bool {
+        if lat > 32.72 { return true }
+        if lat < 25.83 { return false }
+        let borderLat: Double
+        if lon < -117.10 { borderLat = 32.53 }
+        else if lon < -106.48 {
+            borderLat = 32.53 + (31.76 - 32.53) * ((lon - -117.10) / (-106.48 - -117.10))
+        }
+        else if lon < -97.43 {
+            borderLat = 31.76 + (25.89 - 31.76) * ((lon - -106.48) / (-97.43 - -106.48))
+        }
+        else { borderLat = 25.89 }
+        return lat >= borderLat
     }
 
     func addCustomRasterLayer() {
