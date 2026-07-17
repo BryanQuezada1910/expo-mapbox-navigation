@@ -11,21 +11,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class ExpoMapboxNavigationModule : Module() {
-  private val activity
-    get() = requireNotNull(appContext.activityProvider?.currentActivity)
-
   @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
   override fun definition() = ModuleDefinition {
     Name("ExpoMapboxNavigation")
 
     OnActivityEntersForeground {
-      (activity as LifecycleOwner).lifecycleScope.launch(Dispatchers.Main) {
+      val currentActivity = appContext.activityProvider?.currentActivity ?: return@OnActivityEntersForeground
+      val applicationContext = currentActivity.applicationContext
+
+      (currentActivity as LifecycleOwner).lifecycleScope.launch(Dispatchers.Main) {
         if (!MapboxNavigationApp.isSetup()) {
           MapboxNavigationApp.setup {
-            NavigationOptions.Builder(activity.applicationContext).build()
+            NavigationOptions.Builder(applicationContext).build()
           }
         }
-        MapboxNavigationApp.attach(activity as LifecycleOwner)
+        MapboxNavigationApp.attach(currentActivity as LifecycleOwner)
       }
     }
 

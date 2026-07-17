@@ -15,6 +15,7 @@ import androidx.constraintlayout.widget.ConstraintSet
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import com.mapbox.api.directions.v5.models.RouteOptions
+import com.mapbox.navigation.base.options.NavigationOptions
 import com.mapbox.bindgen.Expected
 import com.mapbox.common.location.Location
 import com.mapbox.geojson.Point
@@ -121,7 +122,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     // https://github.com/mapbox/mapbox-navigation-android/blob/188d4781b31bb328733eeca593edc8087e38d915/ui-utils/src/main/java/com/mapbox/navigation/ui/utils/internal/lifecycle/ViewLifecycleRegistry.kt#L67
     init {
         this.setViewTreeLifecycleOwner(
-                appContext.activityProvider?.currentActivity as LifecycleOwner
+                appContext.activityProvider?.currentActivity as? LifecycleOwner
         )
     }
 
@@ -154,7 +155,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val onRouteFailedToLoad by EventDispatcher()
     private val onMarkerPress by EventDispatcher()
 
-    private val mapboxNavigation = MapboxNavigationApp.current()
+    private val mapboxNavigation: com.mapbox.navigation.core.MapboxNavigation?
+        get() {
+            if (!MapboxNavigationApp.isSetup()) {
+                val currentActivity = appContext.activityProvider?.currentActivity
+                if (currentActivity != null) {
+                    MapboxNavigationApp.setup {
+                        NavigationOptions.Builder(currentActivity.applicationContext).build()
+                    }
+                    MapboxNavigationApp.attach(currentActivity as LifecycleOwner)
+                }
+            }
+            return if (MapboxNavigationApp.isSetup()) MapboxNavigationApp.current() else null
+        }
+
     private var mapboxStyle: Style? = null
     private val navigationLocationProvider = NavigationLocationProvider()
     private var voiceInstructionsPlayer =
