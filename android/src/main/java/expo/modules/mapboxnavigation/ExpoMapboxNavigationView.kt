@@ -180,9 +180,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val maneuverView = createManueverView(maneuverViewId, parentConstraintLayout)
 
     private val tripProgressViewId = 3
-    private val tripProgressTimeRemainingTextView = createLeftTextView()
+    private val tripProgressTimeRemainingTextView = createCenteredTextView()
     private val tripProgressDistanceRemainingTextView = createCenteredTextView()
-    private val tripProgressArrivalTimeTextView = createRightTextView()
+    private val tripProgressArrivalTimeTextView = createCenteredTextView()
     private val tripProgressLegendTextView = createCenteredTextView().apply {
         textSize = 12f // 12sp
         setTextColor(Color.parseColor("#808080")) // Gray text
@@ -556,15 +556,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     private fun createCenteredTextView(): TextView {
-        return TextView(context).apply { gravity = Gravity.CENTER }
-    }
-
-    private fun createLeftTextView(): TextView {
-        return TextView(context).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
-    }
-
-    private fun createRightTextView(): TextView {
-        return TextView(context).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        return TextView(context).apply { setGravity(Gravity.CENTER) }
     }
 
     private fun createTripProgressView(
@@ -578,32 +570,45 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         return LinearLayout(context).apply {
             setId(id)
             parent.addView(this)
-            setOrientation(LinearLayout.HORIZONTAL)
+            setOrientation(LinearLayout.VERTICAL)
             setBackgroundColor(Color.WHITE)
-            gravity = Gravity.CENTER_VERTICAL
             setPadding(
-                    (12 * PIXEL_DENSITY).toInt(), // izquierda
-                    (10 * PIXEL_DENSITY).toInt(), // arriba
-                    (12 * PIXEL_DENSITY).toInt(), // derecha
-                    (16 * PIXEL_DENSITY).toInt()  // abajo (safe area)
+                    (5 * PIXEL_DENSITY).toInt(),
+                    (10 * PIXEL_DENSITY).toInt(),
+                    (5 * PIXEL_DENSITY).toInt(),
+                    (15 * PIXEL_DENSITY).toInt() // Bottom padding extra
             )
 
-            // Columna izquierda: tiempo restante (grande, alineado a la izquierda)
+            // Leyenda al principio (arriba de todo)
+            addView(
+                tripProgressLegendTextView,
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT
+            )
+
             addView(
                     tripProgressTimeRemainingTextView,
-                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 2f) // peso 2 = más ancho
+                    LayoutParams.MATCH_PARENT,
+                    (60 * PIXEL_DENSITY).toInt() // 60dp fijos para alojar los spans grandes sin recortar
             )
 
-            // Columna central: distancia restante
-            addView(
-                    tripProgressDistanceRemainingTextView,
-                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.5f)
-            )
+            val bottomContainer =
+                    LinearLayout(context).apply {
+                        setOrientation(LinearLayout.HORIZONTAL)
+                        addView(
+                                tripProgressDistanceRemainingTextView,
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+                        )
+                        addView(
+                                tripProgressArrivalTimeTextView,
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+                        )
+                    }
 
-            // Columna derecha: hora de llegada
             addView(
-                    tripProgressArrivalTimeTextView,
-                    LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.5f)
+                    bottomContainer,
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
             )
         }
     }
@@ -760,9 +765,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     ConstraintSet.PARENT_ID,
                     ConstraintSet.END
             )
-            constrainMinHeight(tripProgressViewId, (110 * PIXEL_DENSITY).toInt()) // Altura mínima mayor para que quepan tiempo + distancia + ETA
+            constrainMinHeight(tripProgressViewId, (80 * PIXEL_DENSITY).toInt())
             constrainWidth(tripProgressViewId, ConstraintSet.MATCH_CONSTRAINT)
-            constrainHeight(tripProgressViewId, ConstraintSet.WRAP_CONTENT) // Permitir que crezca si el contenido lo necesita
 
             // Add SpeedLimitView constraints (above sound button, right side)
             val speedLimitSize = (64 * PIXEL_DENSITY).toInt()
