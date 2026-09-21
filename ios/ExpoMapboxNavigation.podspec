@@ -10,13 +10,17 @@ Pod::Spec.new do |s|
   s.license        = package['license']
   s.author         = package['author']
   s.homepage       = package['homepage']
-  s.platforms      = { :ios => '13.4', :tvos => '13.4' }
+  s.platforms      = { :ios => '14.0' }
   s.swift_version  = '5.9'
   s.source         = { git: 'https://github.com/BryanQuezada1910/expo-mapbox-navigation' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.dependency 'MapboxMaps', ENV['ExpoNavigationMapboxMapsVersion']
+  if ENV['ExpoNavigationMapboxMapsVersion'] && !ENV['ExpoNavigationMapboxMapsVersion'].strip.empty? && ENV['ExpoNavigationMapboxMapsVersion'] != 'undefined'
+    s.dependency 'MapboxMaps', ENV['ExpoNavigationMapboxMapsVersion']
+  else
+    s.dependency 'MapboxMaps'
+  end
   s.dependency 'Turf', '~> 4.0.0'
 
   s.source_files = "**/*.{h,m,swift}"
@@ -33,7 +37,6 @@ Pod::Spec.new do |s|
     'Frameworks/MapboxNavigationCore.xcframework',
     'Frameworks/MapboxNavigationNative.xcframework',
     'Frameworks/MapboxNavigationUIKit.xcframework',
-    'Frameworks/Turf.xcframework',
   ]
 
   # Swift/Objective-C compatibility
