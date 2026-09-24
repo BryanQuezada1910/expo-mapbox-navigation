@@ -24,7 +24,8 @@ const applyPodfilePostInstallModifications = (src, mapboxMapsVersion) => {
 
   if (
     src.includes("BUILD_LIBRARY_FOR_DISTRIBUTION") &&
-    src.includes("MapboxMaps")
+    src.includes("MapboxMaps") &&
+    src.includes("MACH_O_TYPE")
   ) {
     return versionEnv ? versionEnv + src : src;
   }
@@ -38,6 +39,13 @@ const applyPodfilePostInstallModifications = (src, mapboxMapsVersion) => {
           if (target.name.include? 'MapboxMaps' or target.name.include? 'Turf')
             target.build_configurations.each do |config|
               config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+            end
+          end
+          # Force MapboxMaps to be a dynamic framework so that the vendored
+          # Navigation xcframeworks (which are dynamic) can find it at @rpath.
+          if target.name == 'MapboxMaps'
+            target.build_configurations.each do |config|
+              config.build_settings['MACH_O_TYPE'] = 'mh_dylib'
             end
           end
         end`
