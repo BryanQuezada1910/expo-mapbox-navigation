@@ -7,7 +7,27 @@ public class ExpoMapboxNavigationModule: Module {
     Name("ExpoMapboxNavigation")
 
     View(ExpoMapboxNavigationView.self) {
-      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad", "onMarkerPress")
+      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad", "onMarkerPress", "onPlannedRouteLocation")
+
+      Prop("routeMode") { (view: ExpoMapboxNavigationView, value: String?) in view.controller.setRouteMode(value) }
+      Prop("reroutingEnabled") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setReroutingEnabled(value) }
+      Prop("routeDeviationTolerance") { (view: ExpoMapboxNavigationView, value: Double?) in view.controller.setRouteDeviationTolerance(value) }
+      Prop("routeRevision") { (view: ExpoMapboxNavigationView, value: String?) in view.controller.setRouteRevision(value) }
+      Prop("guidanceEnabled") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setGuidanceEnabled(value) }
+      Prop("isFinalRouteChunk") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setFinalRouteChunk(value) }
+      Prop("plannedRouteProgress") { (view: ExpoMapboxNavigationView, value: [String: Double]?) in view.controller.setPlannedRouteProgress(value) }
+      Prop("plannedRouteCoordinates") { (view: ExpoMapboxNavigationView, value: [[String: Double]]?) in
+          view.controller.setPlannedRouteCoordinates((value ?? []).compactMap {
+              guard let latitude = $0["latitude"], let longitude = $0["longitude"] else { return nil }
+              return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+          })
+      }
+      Prop("prefetchCoordinates") { (view: ExpoMapboxNavigationView, value: [[String: Double]]?) in
+          view.controller.setPrefetchCoordinates((value ?? []).compactMap {
+              guard let latitude = $0["latitude"], let longitude = $0["longitude"] else { return nil }
+              return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+          })
+      }
 
       Prop("coordinates") { (view: ExpoMapboxNavigationView, coordinates: Array<Dictionary<String, Any>>) in
          var points: Array<CLLocationCoordinate2D> = []

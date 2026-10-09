@@ -20,14 +20,14 @@ extension Bundle {
             return self.customLocalizedString(forKey: key, value: value, table: tableName)
         }
         // Intentar encontrar el bundle específico (ej: es-MX) o el base (ej: es)
-        var path = self.path(forResource: language, ofType: "lproj") 
+        var path = self.path(forResource: language, ofType: "lproj")
             ?? self.path(forResource: String(language.prefix(2)), ofType: "lproj")
-            
+
         // Mapbox usa en-US en lugar de en
         if path == nil && language.hasPrefix("en") {
             path = self.path(forResource: "en-US", ofType: "lproj")
         }
-        
+
         if let validPath = path, let languageBundle = Bundle(path: validPath) {
             return languageBundle.customLocalizedString(forKey: key, value: value, table: tableName)
         } else {
@@ -45,6 +45,7 @@ class ExpoMapboxNavigationView: ExpoView {
     private let onRoutesLoaded = EventDispatcher()
     private let onRouteFailedToLoad = EventDispatcher()
     private let onMarkerPress = EventDispatcher()
+    private let onPlannedRouteLocation = EventDispatcher()
 
     let controller = ExpoMapboxNavigationViewController()
 
@@ -79,6 +80,8 @@ class ExpoMapboxNavigationView: ExpoView {
                 self.onRoutesLoaded(payload)
             case "onRouteFailedToLoad":
                 self.onRouteFailedToLoad(payload)
+            case "onPlannedRouteLocation":
+                self.onPlannedRouteLocation(payload)
             case "onMarkerPress":
                 self.onMarkerPress(payload)
             default:
@@ -86,6 +89,8 @@ class ExpoMapboxNavigationView: ExpoView {
             }
         }
     }
+
+    deinit { controller.stopPlannedRoute() }
 
     override func layoutSubviews() {
         controller.view.frame = bounds
@@ -100,7 +105,33 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var navigation: NavigationController? = nil
     var tripSession: SessionController? = nil
     var navigationViewController: NavigationViewController? = nil
-    
+
+    let plannedRenderer = PlannedRouteRenderer()
+    var plannedMode = false
+    var reroutingEnabled = true
+    var routeDeviationTolerance = 25.0
+    var routeRevision = ""
+    var guidanceEnabled = false
+    var finalRouteChunk = true
+    var plannedCoordinates: [CLLocationCoordinate2D] = []
+    var prefetchCoordinates: [CLLocationCoordinate2D] = []
+    var requestedMute = false
+    var guidanceWasSuppressed = true
+    var plannedFallbackMap: MapView?
+    var plannedProgressLabel: UILabel?
+    var plannedLocationSubscription: AnyCancellable?
+    var plannedStyleSubscription: AnyCancelable?
+    lazy var plannedController = PlannedRouteController(
+        provider: { [weak self] in self?.routingProvider },
+        ready: { [weak self] routes, revision in
+            guard let self = self, self.plannedMode, self.routeRevision == revision else { return }
+            self.onRoutesCalculated(navigationRoutes: routes)
+        },
+        failed: { [weak self] message, revision in
+            guard let self = self, self.plannedMode, self.routeRevision == revision else { return }
+            self.onEvent?("onRouteFailedToLoad", ["errorMessage": message, "routeRevision": revision])
+        })
+
     var currentCoordinates: Array<CLLocationCoordinate2D>? = nil
     var initialLocation: CLLocationCoordinate2D? = nil
     var initialLocationZoom: Double? = nil
@@ -142,34 +173,46 @@ class ExpoMapboxNavigationViewController: UIViewController {
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
+        plannedLocationSubscription = navigation!.locationMatching.sink { [weak self] state in
+            guard let self = self, self.plannedMode else { return }
+            let coordinate = state.location.coordinate
+            self.onEvent?("onPlannedRouteLocation", ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
+            if let map = self.plannedFallbackMap {
+                map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: self.initialLocationZoom ?? 15))
+            }
+        }
 
-        routeProgressCancellable = navigation!.routeProgress.sink { progressState in
+        routeProgressCancellable = navigation!.routeProgress.sink { [weak self] progressState in
+            guard let self = self else { return }
             if(progressState != nil){
 
 
+                if !self.plannedMode {
                 // For some reason the maneuver arrows sometimes (not consistently) show up the same color as the route line making them invisible.
                 // This is a hack to always ensure the arrows are visible.
                 try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
                     for: "com.mapbox.navigation.arrow.next",
                     property: "line-color",
-                    value: "#FFFFFF" 
+                    value: "#FFFFFF"
                 )
                 try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
                     for: "com.mapbox.navigation.arrow.next.stroke",
                     property: "line-color",
-                    value: "#FFFFFF" 
+                    value: "#FFFFFF"
                 )
                 try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
                     for: "com.mapbox.navigation.arrow.next.symbol",
                     property: "icon-color",
-                    value: "#FFFFFF" 
+                    value: "#FFFFFF"
                 )
                 try? self.navigationViewController?.navigationMapView?.mapView.mapboxMap.setLayerProperty(
                     for: "com.mapbox.navigation.arrow.next.symbol.casing",
                     property: "icon-color",
-                    value: "#FFFFFF" 
+                    value: "#FFFFFF"
                 )
-                
+
+                }
+                if self.plannedMode { self.navigationViewController?.navigationMapView?.removeRoutes(); self.refreshPlannedInstructions(); self.drawPlannedRoute() }
                 // Add Speed Limit Label Logic
                 DispatchQueue.main.async {
                     if let speedLimitView = self.navigationViewController?.view.findViews(subclassOf: SpeedLimitView.self).first,
@@ -185,9 +228,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
                             unitLabel!.textColor = .black
                             unitLabel!.textAlignment = .center
                             unitLabel!.translatesAutoresizingMaskIntoConstraints = false
-                            
+
                             parentView.addSubview(unitLabel!)
-                            
+
                             NSLayoutConstraint.activate([
                                 unitLabel!.centerXAnchor.constraint(equalTo: speedLimitView.centerXAnchor),
                                 unitLabel!.topAnchor.constraint(equalTo: speedLimitView.bottomAnchor, constant: 2),
@@ -195,7 +238,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                                 unitLabel!.heightAnchor.constraint(equalToConstant: 16)
                             ])
                         }
-                        
+
                         if speedLimitView.speedLimit != nil && !speedLimitView.isHidden && speedLimitView.alpha > 0 {
                             if let location = self.navigationViewController?.navigationMapView?.mapView.location.latestLocation?.coordinate {
                                 let inUS = self.isUS(lat: location.latitude, lon: location.longitude)
@@ -207,7 +250,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                         }
                     }
                 }
-                
+
                self.onEvent?("onRouteProgressChanged", [
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
@@ -217,7 +260,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
         }
 
-        waypointArrivalCancellable = navigation!.waypointsArrival.sink { arrivalStatus in
+        waypointArrivalCancellable = navigation!.waypointsArrival.sink { [weak self] arrivalStatus in
+            guard let self = self else { return }
+            if self.plannedMode && (!self.finalRouteChunk || !self.guidanceEnabled) { return }
             let event = arrivalStatus.event
             if event is WaypointArrivalStatus.Events.ToFinalDestination {
                 self.onEvent?("onFinalDestinationArrival", [:])
@@ -226,11 +271,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
         }
 
-        reroutingCancellable = navigation!.rerouting.sink { rerouteStatus in
+        reroutingCancellable = navigation!.rerouting.sink { [weak self] rerouteStatus in
+            guard let self = self else { return }
             self.onEvent?("onRouteChanged", [:])
         }
 
-        sessionCancellable = tripSession!.session.sink { session in 
+        sessionCancellable = tripSession!.session.sink { [weak self] session in
+            guard let self = self else { return }
             let state = session.state
             switch state {
                 case .activeGuidance(let activeGuidanceState):
@@ -245,6 +292,18 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     }
 
+    func stopPlannedRoute() {
+        plannedController.reset()
+        plannedLocationSubscription?.cancel()
+        plannedStyleSubscription?.cancel()
+        calculateRoutesTask?.cancel()
+        updateDebounceTimer?.invalidate()
+        routeProgressCancellable?.cancel()
+        waypointArrivalCancellable?.cancel()
+        reroutingCancellable?.cancel()
+        sessionCancellable?.cancel()
+    }
+
     deinit {
         calculateRoutesTask?.cancel()
         updateDebounceTimer?.invalidate()
@@ -252,6 +311,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
         sessionCancellable?.cancel()
+        plannedLocationSubscription?.cancel()
     }
 
     override func viewDidLoad() {
@@ -301,7 +361,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             return
         }
 
-        let sourceUrl = currentCustomRasterSourceUrl! 
+        let sourceUrl = currentCustomRasterSourceUrl!
 
         var rasterSource = RasterSource(id: sourceId)
 
@@ -320,7 +380,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             }
 
             try? mapView.addSource(rasterSource)
-            try? mapView.addLayer(rasterLayer, layerPosition: .above(currentPlaceCustomRasterLayerAbove ?? "water"))    
+            try? mapView.addLayer(rasterLayer, layerPosition: .above(currentPlaceCustomRasterLayerAbove ?? "water"))
         }
     }
 
@@ -348,6 +408,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             currentLocale = Locale.current
         }
         if previousLocale != currentLocale.identifier {
+            plannedController.reset()
             _forceRecreateNavigationController = true
         }
         UserDefaults.standard.set([currentLocale.identifier], forKey: "AppleLanguages")
@@ -396,13 +457,16 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func recenterMap(){
+        if let map = plannedFallbackMap, let coordinate = navigation?.currentLocationMatching?.location.coordinate { map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: initialLocationZoom ?? 15)); return }
         let navigationMapView = navigationViewController?.navigationMapView
         navigationMapView?.navigationCamera.update(cameraState: .following)
     }
 
     func setIsMuted(isMuted: Bool?){
         if(isMuted != nil){
+            requestedMute = isMuted!
             ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = isMuted!
+            refreshPlannedInstructions()
         }
     }
 
@@ -443,39 +507,39 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func updateMarkers() {
         guard let navigationMapView = navigationViewController?.navigationMapView else { return }
-        
+
         // Create annotation manager if it doesn't exist
         if pointAnnotationManager == nil {
             pointAnnotationManager = navigationMapView.mapView.annotations.makePointAnnotationManager()
             // Set delegate for tap handling
             pointAnnotationManager?.delegate = self
         }
-        
+
         // Clear existing annotations
         pointAnnotationManager?.annotations = []
-        
+
         guard let markers = currentMarkers else { return }
-        
+
         var annotations: [PointAnnotation] = []
-        
+
         for (index, marker) in markers.enumerated() {
             guard let lat = marker["latitude"] as? Double,
                   let lon = marker["longitude"] as? Double else {
                 continue
             }
-            
+
             let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
             var annotation = PointAnnotation(id: marker["id"] as? String ?? "marker-\(index)", coordinate: coordinate)
-            
+
             // Store marker data in userInfo using JSON encoding
             if let jsonData = try? JSONSerialization.data(withJSONObject: marker),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 annotation.userInfo = ["markerData": jsonString]
             }
-            
+
             // Get marker color (default to red)
             let markerColor = parseColor(from: marker["color"] as? String) ?? .red
-            
+
             // Set marker icon (círculo con letra: "P" Parada / "S" Stop según idioma)
             if let iconName = marker["iconName"] as? String, let image = UIImage(named: iconName) {
                 annotation.image = .init(image: image, name: iconName)
@@ -487,14 +551,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
                     annotation.image = .init(image: img, name: "stop-\(letter)-\(colorHex)")
                 }
             }
-            
+
             annotation.iconSize = 1.0
             annotations.append(annotation)
         }
-        
+
         pointAnnotationManager?.annotations = annotations
     }
-    
+
     /// Genera imagen de marcador: círculo con borde blanco, relleno del color y letra centrada.
     /// La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
     func makeStopMarkerImage(color: UIColor, letter: String, size: CGFloat) -> UIImage? {
@@ -521,11 +585,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
         return image
     }
-    
+
     // Helper function to parse color from string (hex or rgb format)
     func parseColor(from colorString: String?) -> UIColor? {
         guard let colorString = colorString else { return nil }
-        
+
         // Handle hex format: #RRGGBB or #RGB
         if colorString.hasPrefix("#") {
             var hexString = colorString.dropFirst()
@@ -543,7 +607,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 )
             }
         }
-        
+
         // Handle rgb format: rgb(R, G, B)
         if colorString.lowercased().hasPrefix("rgb(") {
             let values = colorString
@@ -551,7 +615,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 .replacingOccurrences(of: ")", with: "")
                 .split(separator: ",")
                 .compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-            
+
             if values.count == 3 {
                 return UIColor(
                     red: CGFloat(values[0]) / 255.0,
@@ -561,10 +625,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 )
             }
         }
-        
+
         return nil
     }
-    
+
     func update(){
         // Debounce: React Native sends props one-by-one in rapid succession.
         // Wait 80 ms so all props settle before firing a single Mapbox API call.
@@ -577,17 +641,22 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func performUpdate(){
         calculateRoutesTask?.cancel()
+        applyRoutingPolicy()
+        preparePlannedMap()
 
-        if(currentCoordinates != nil){
+        if(currentCoordinates != nil && currentCoordinates!.count >= 2){
             let waypoints = currentCoordinates!.enumerated().map {
                 let index = $0
                 let coordinate = $1
-                var waypoint = Waypoint(coordinate: coordinate) 
+                var waypoint = Waypoint(coordinate: coordinate)
                 waypoint.separatesLegs = currentWaypointIndices == nil ? true : currentWaypointIndices!.contains(index)
                 return waypoint
             }
 
-            if(isUsingRouteMatchingApi){
+            if plannedMode {
+                drawPlannedRoute()
+                plannedController.activate(currentCoordinates!, next: prefetchCoordinates, revision: routeRevision, tolerance: routeDeviationTolerance, locale: currentLocale)
+            } else if(isUsingRouteMatchingApi){
                 calculateMapMatchingRoutes(waypoints: waypoints)
             } else {
                 calculateRoutes(waypoints: waypoints)
@@ -619,17 +688,19 @@ class ExpoMapboxNavigationViewController: UIViewController {
         if let excludes = currentRouteExcludeList, !excludes.isEmpty {
             queryItems.append(URLQueryItem(name: "exclude", value: excludes.joined(separator: ",")))
         }
-            
+
         let routeOptions = NavigationRouteOptions(
-            waypoints: waypoints, 
+            waypoints: waypoints,
             profileIdentifier: getProfileIdentifier(from: currentRouteProfile),
             queryItems: queryItems,
-            locale: currentLocale, 
+            locale: currentLocale,
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
         )
 
         calculateRoutesTask = Task {
-            switch await self.routingProvider!.calculateRoutes(options: routeOptions).result {
+            let result = await self.routingProvider!.calculateRoutes(options: routeOptions).result
+            guard !Task.isCancelled else { return }
+            switch result {
             case .failure(let error):
                 self.onEvent?("onRouteFailedToLoad", [
                     "errorMessage": error.localizedDescription
@@ -650,7 +721,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         let matchOptions = NavigationMatchOptions(
-            waypoints: waypoints, 
+            waypoints: waypoints,
             profileIdentifier: matchProfile,
             queryItems: matchQueryItems.isEmpty ? nil : matchQueryItems,
             distanceUnit: currentLocale.usesMetricSystem ? LengthFormatter.Unit.meter : LengthFormatter.Unit.mile
@@ -659,7 +730,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
 
         calculateRoutesTask = Task {
-            switch await self.routingProvider!.calculateRoutes(options: matchOptions).result {
+            let result = await self.routingProvider!.calculateRoutes(options: matchOptions).result
+            guard !Task.isCancelled else { return }
+            switch result {
             case .failure(let error):
                 print("Map matching failed: \(error.localizedDescription). Falling back to regular routing...")
                 self.calculateRoutes(waypoints: waypoints)
@@ -706,6 +779,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func onRoutesCalculated(navigationRoutes: NavigationRoutes){
         onEvent?("onRoutesLoaded", [
+            "routeRevision": routeRevision,
             "routes": [
                 "mainRoute": convertRoute(route: navigationRoutes.mainRoute.route),
                 "alternativeRoutes": navigationRoutes.alternativeRoutes.map { convertRoute(route: $0.route) }
@@ -747,7 +821,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 navigationOptions: navigationOptions
             )
         }
-        
+
         let navigationViewController = navigationViewController!
 
         navigationViewController.showsContinuousAlternatives = currentDisableAlternativeRoutes != true
@@ -756,6 +830,18 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let navigationMapView = navigationViewController.navigationMapView
         navigationMapView!.puckType = .puck2D(.navigationDefault)
+        if plannedMode {
+            navigationMapView!.routeColor = .clear
+            navigationMapView!.routeAlternateColor = .clear
+            navigationMapView!.routeCasingColor = .clear
+            navigationMapView!.traversedRouteColor = .clear
+            navigationMapView!.maneuverArrowColor = .clear
+            navigationMapView!.maneuverArrowStrokeColor = .clear
+            navigationMapView!.waypointColor = .clear
+            navigationMapView!.waypointStrokeColor = .clear
+            navigationViewController.navigationView.bottomBannerContainerView.isHidden = true
+            plannedStyleSubscription = navigationMapView!.mapView.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
+        }
 
         if(initialLocation != nil && newNavigationControllerRequired){
             navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
@@ -769,8 +855,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
             } catch {}
             self.addCustomRasterLayer()
             self.updateMarkers()
+            self.drawPlannedRoute()
         })
-        
+
 
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
@@ -789,7 +876,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             navigationViewController.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
             navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
         ])
-        
+
         // Add bottom legend label if it doesn't exist
         if bottomLegendLabel == nil {
             let label = UILabel()
@@ -798,10 +885,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
             label.font = UIFont.systemFont(ofSize: 12, weight: .regular)
             label.textAlignment = .center
             label.backgroundColor = .clear
-            
+
             bottomLegendLabel = label
             navigationViewController.view.addSubview(label)
-            
+
             NSLayoutConstraint.activate([
                 label.centerXAnchor.constraint(equalTo: navigationViewController.view.centerXAnchor),
                 label.bottomAnchor.constraint(equalTo: navigationViewController.navigationView.bottomBannerContainerView.topAnchor, constant: -10),
@@ -810,6 +897,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         didMove(toParent: self)
+        plannedFallbackMap?.removeFromSuperview()
+        plannedFallbackMap = nil
+        refreshPlannedInstructions()
+        drawPlannedRoute()
+        if let label = plannedProgressLabel { view.bringSubviewToFront(label) }
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
     }
 }
@@ -832,7 +924,7 @@ extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
 extension ExpoMapboxNavigationViewController: AnnotationInteractionDelegate {
     func annotationManager(_ manager: AnnotationManager, didDetectTappedAnnotations annotations: [Annotation]) {
         guard let pointAnnotation = annotations.first as? PointAnnotation else { return }
-        
+
         // Extract marker data from userInfo
         if let markerDataString = pointAnnotation.userInfo?["markerData"] as? String,
            let markerData = markerDataString.data(using: .utf8),

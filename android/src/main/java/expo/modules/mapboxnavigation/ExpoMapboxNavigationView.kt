@@ -112,6 +112,7 @@ import java.util.Locale
 
 val PIXEL_DENSITY = Resources.getSystem().displayMetrics.density
 
+@OptIn(com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI::class)
 class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         ExpoView(context, appContext) {
 
@@ -125,6 +126,32 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 appContext.activityProvider?.currentActivity as? LifecycleOwner
         )
     }
+
+    private var plannedMode = false
+    private var reroutingEnabled = true
+    private var routeDeviationTolerance = 25.0
+    private var routeRevision = ""
+    private var installedRouteRevision = ""
+    private var installedRouteGeometry: String? = null
+    private var guidanceEnabled = false
+    private var finalRouteChunk = true
+    private var suppressPlannedInstruction = false
+    private var plannedCoordinates = emptyList<Point>()
+    private var prefetchCoordinates = emptyList<Point>()
+    private val updateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val updateRunnable = Runnable { performUpdate() }
+    private val plannedController by lazy {
+        PlannedRouteController({ mapboxNavigation }, { routes, revision ->
+            if (plannedMode && routeRevision == revision) {
+                installedRouteRevision = revision
+                installedRouteGeometry = routes.firstOrNull()?.directionsRoute?.geometry()
+                onRoutesReady(routes)
+            }
+        }, { message, revision ->
+            if (plannedMode && routeRevision == revision) onRouteFailedToLoad(mapOf("errorMessage" to message, "routeRevision" to revision))
+        })
+    }
+    private val onPlannedRouteLocation by EventDispatcher()
 
     private var isMuted = false
     private var currentCoordinates: List<Point>? = null
@@ -310,6 +337,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     private val speechCallback =
             MapboxNavigationConsumer<Expected<SpeechError, SpeechValue>> { expected ->
+                if (plannedMode && (!guidanceEnabled || suppressPlannedInstruction)) return@MapboxNavigationConsumer
                 expected.fold(
                         { error ->
                             voiceInstructionsPlayer.play(
@@ -326,7 +354,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 )
             }
     private val voiceInstructionsObserver = VoiceInstructionsObserver { voiceInstructions ->
-        speechApi.generate(voiceInstructions, speechCallback)
+        if (!plannedMode || (guidanceEnabled && !suppressPlannedInstruction)) speechApi.generate(voiceInstructions, speechCallback)
     }
 
     private val routesRequestCallback =
@@ -335,14 +363,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         routes: List<NavigationRoute>,
                         @RouterOrigin routerOrigin: String
                 ) {
-                    onRoutesReady(routes)
+                    if (isAttachedToWindow && !plannedMode) onRoutesReady(routes)
                 }
                 override fun onCanceled(
                         routeOptions: RouteOptions,
                         @RouterOrigin routerOrigin: String
                 ) {}
                 override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
-                    onRouteFailedToLoad(mapOf("errorMessage" to reasons.first().message))
+                    if (isAttachedToWindow && !plannedMode) onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: "No se pudo cargar la ruta")))
                 }
             }
 
@@ -350,10 +378,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val mapMatchingRequestCallback =
             object : MapMatchingAPICallback {
                 override fun success(result: MapMatchingSuccessfulResult) {
-                    onRoutesReady(result.navigationRoutes)
+                    if (isAttachedToWindow && !plannedMode) onRoutesReady(result.navigationRoutes)
                 }
                 override fun onCancel() {}
                 override fun failure(failure: MapMatchingFailure) {
+                    if (!isAttachedToWindow || plannedMode) return
                     android.util.Log.e("Mapbox", "Map matching failed: ${failure.toString()}. Falling back to regular routing...")
                     requestRoutes()
                 }
@@ -362,8 +391,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routesObserver =
             object : RoutesObserver {
                 override fun onRoutesChanged(result: RoutesUpdatedResult) {
+                    if (result.navigationRoutes.isEmpty()) return
+                    if (plannedMode && result.navigationRoutes.first().directionsRoute.geometry() != installedRouteGeometry) return
                     onRoutesLoaded(
                             mapOf(
+                                    "routeRevision" to installedRouteRevision,
                                     "routes" to
                                             mapOf(
                                                     "mainRoute" to
@@ -390,7 +422,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     // Handle route lines
                     val alternativesMetadata =
                             mapboxNavigation?.getAlternativeMetadataFor(result.navigationRoutes)
-                    if (alternativesMetadata != null) {
+                    if (!plannedMode && alternativesMetadata != null) {
                         routeLineApi.setNavigationRoutes(
                                 result.navigationRoutes,
                                 alternativesMetadata
@@ -424,18 +456,22 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeProgressObserver =
             object : RouteProgressObserver {
                 override fun onRouteProgressChanged(routeProgress: RouteProgress) {
+                    val arrival = routeProgress.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type() == "arrive" || routeProgress.currentLegProgress?.upcomingStep?.maneuver()?.type() == "arrive"
+                    suppressPlannedInstruction = plannedMode && (!guidanceEnabled || (!finalRouteChunk && arrival))
+                    if (suppressPlannedInstruction) { maneuverView.visibility = View.INVISIBLE; return }
+                    maneuverView.visibility = View.VISIBLE
                     // Handle viewport data source
                     viewportDataSource.onRouteProgressChanged(routeProgress)
                     viewportDataSource.evaluate()
 
                     // Handle route lines
-                    routeLineApi.updateWithRouteProgress(routeProgress) { result ->
+                    if (!plannedMode) routeLineApi.updateWithRouteProgress(routeProgress) { result ->
                         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
                     }
 
                     // Handle route arrows
-                    val updatedManeuverArrow = routeArrow.addUpcomingManeuverArrow(routeProgress)
-                    mapboxStyle?.let {
+                    val updatedManeuverArrow = if (!plannedMode) routeArrow.addUpcomingManeuverArrow(routeProgress) else null
+                    if (!plannedMode && updatedManeuverArrow != null) mapboxStyle?.let {
                         routeArrowView.renderManeuverUpdate(it, updatedManeuverArrow)
                     }
 
@@ -444,7 +480,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     maneuverView.renderManeuvers(maneuvers)
 
                     // Handle trip progress view
-                    tripProgressApi.getTripProgress(routeProgress).let {
+                    if (!plannedMode) tripProgressApi.getTripProgress(routeProgress).let {
                             update: TripProgressUpdateValue ->
                         val formatter = update.formatter
                         tripProgressTimeRemainingTextView.text =
@@ -472,6 +508,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 override fun onNewLocationMatcherResult(
                         locationMatcherResult: LocationMatcherResult
                 ) {
+                    if (plannedMode) return
                     // Update puck location with enhanced (map-matched) location
                     val enhancedLocation = locationMatcherResult.enhancedLocation
                     navigationLocationProvider.changePosition(
@@ -508,6 +545,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     }
                 }
                 override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
+                    if (plannedMode) onPlannedRouteLocation(mapOf("latitude" to rawLocation.latitude, "longitude" to rawLocation.longitude))
                     // Also update from raw location as fallback
                     // (e.g. before trip session starts or when map matching is unavailable)
                     navigationLocationProvider.changePosition(
@@ -521,6 +559,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val arrivalObserver =
             object : ArrivalObserver {
                 override fun onWaypointArrival(routeProgress: RouteProgress) {
+                    if (plannedMode) return
                     onWaypointArrival(
                             mapOf(
                                     "distanceRemaining" to routeProgress.distanceRemaining,
@@ -532,6 +571,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 }
                 override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {}
                 override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
+                    if (plannedMode && (!finalRouteChunk || !guidanceEnabled)) return
                     onFinalDestinationArrival(mapOf())
                 }
             }
@@ -546,6 +586,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             }
 
     private val onIndicatorPositionChangedListener = OnIndicatorPositionChangedListener { point ->
+        if (plannedMode) return@OnIndicatorPositionChangedListener
         val result = routeLineApi.updateTraveledRouteLine(point)
         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
     }
@@ -555,7 +596,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             setId(id)
             parent.addView(this)
 
-            mapboxMap.loadStyle(Style.MAPBOX_STREETS) { style: Style -> mapboxStyle = style }
+            mapboxMap.loadStyle(Style.MAPBOX_STREETS) { style: Style -> mapboxStyle = style; drawPlannedRoute() }
 
             location.apply {
                 locationPuck =
@@ -958,6 +999,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        currentRoutesRequestId?.let { mapboxNavigation?.cancelRouteRequest(it) }
+        currentMapMatchingRequestId?.let { mapboxNavigation?.cancelMapMatchingRequest(it) }
+        updateHandler.removeCallbacks(updateRunnable)
+        plannedController.reset()
         mapboxNavigation?.unregisterRoutesObserver(routesObserver)
         mapboxNavigation?.unregisterRouteProgressObserver(routeProgressObserver)
         mapboxNavigation?.unregisterLocationObserver(locationObserver)
@@ -1016,6 +1061,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     private fun onRoutesReady(routes: List<NavigationRoute>) {
+        mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
         mapboxNavigation?.setNavigationRoutes(routes)
         mapboxNavigation?.startTripSession(withForegroundService = false)
         navigationCamera.requestNavigationCameraToFollowing(
@@ -1027,6 +1073,43 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    fun setRouteMode(value: String?) { plannedMode = value == "planned"; update() }
+    fun setReroutingEnabled(value: Boolean?) { reroutingEnabled = value ?: true; update() }
+    fun setRouteDeviationTolerance(value: Double?) {
+        val next = value?.takeIf { it.isFinite() && it > 0 && it <= 50 } ?: 25.0
+        if (next != routeDeviationTolerance) plannedController.reset()
+        routeDeviationTolerance = next
+        update()
+    }
+    fun setRouteRevision(value: String?) { routeRevision = value ?: ""; update() }
+    fun setPrefetchCoordinates(value: List<Point>) { prefetchCoordinates = value; update() }
+    fun setFinalRouteChunk(value: Boolean?) { finalRouteChunk = value ?: true }
+    fun setGuidanceEnabled(value: Boolean?) {
+        guidanceEnabled = value ?: false
+        if (plannedMode && !guidanceEnabled) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
+        maneuverView.visibility = if (plannedMode && !guidanceEnabled) View.INVISIBLE else View.VISIBLE
+    }
+    fun setPlannedRouteCoordinates(value: List<Point>) {
+        if (plannedCoordinates != value) plannedController.reset()
+        plannedCoordinates = value
+        drawPlannedRoute()
+    }
+    fun setPlannedRouteProgress(value: Map<String, Double>?) {
+        if (!plannedMode || value == null) return
+        tripProgressDistanceRemainingTextView.text = String.format(currentLocale, "%.1f km", (value["distanceRemaining"] ?: 0.0) / 1000)
+        val seconds = value["durationRemaining"] ?: 0.0
+        tripProgressTimeRemainingTextView.text = if (seconds > 0) String.format(currentLocale, "%.0f min", seconds / 60) else "—"
+        tripProgressArrivalTimeTextView.text = ""
+    }
+    private fun drawPlannedRoute() {
+        if (plannedMode) mapboxStyle?.let { PlannedRouteRenderer.draw(it, plannedCoordinates) }
+    }
+    @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    private fun update() {
+        updateHandler.removeCallbacks(updateRunnable)
+        updateHandler.postDelayed(updateRunnable, 80)
+    }
+
     fun setCoordinates(coordinates: List<Point>) {
         currentCoordinates = coordinates
         update()
@@ -1046,10 +1129,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setLocale(localeStr: String?) {
+        val previousLocale = currentLocale
         currentLocale =
                 if (localeStr == null || localeStr == "default") Locale.getDefault()
                 else Locale.Builder().setLanguageTag(localeStr).build()
 
+        if (previousLocale != currentLocale) plannedController.reset()
         try {
             val config = context.resources.configuration
             config.setLocale(currentLocale)
@@ -1057,7 +1142,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        
+
         update()
     }
 
@@ -1148,34 +1233,34 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         if (pointAnnotationManager == null) {
             pointAnnotationManager = mapView.annotations.createPointAnnotationManager()
         }
-        
+
         // Clear existing annotations
         pointAnnotationManager?.deleteAll()
-        
+
         val markers = currentMarkers ?: return
-        
+
         // Store marker data for click handling
         val markerDataMap = mutableMapOf<String, Map<String, Any>>()
-        
+
         for ((index, marker) in markers.withIndex()) {
             val lat = marker["latitude"] as? Double ?: continue
             val lon = marker["longitude"] as? Double ?: continue
             val iconName = marker["iconName"] as? String
             val markerId = marker["id"] as? String ?: "marker-$index"
             val colorString = marker["color"] as? String
-            
+
             // Parse color (default to red)
             val markerColor = parseColor(colorString) ?: Color.RED
-            
+
             // Store marker data
             markerDataMap[markerId] = marker
-            
+
             val point = Point.fromLngLat(lon, lat)
-            
+
             val pointAnnotationOptions = PointAnnotationOptions()
                 .withPoint(point)
                 .withData(com.google.gson.JsonPrimitive(markerId))
-            
+
             // Try to load custom icon or use default marker
             if (iconName != null) {
                 val resourceId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
@@ -1198,10 +1283,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 val defaultBitmap = createDefaultMarkerBitmap(markerColor, letter)
                 pointAnnotationOptions.withIconImage(defaultBitmap)
             }
-            
+
             pointAnnotationManager?.create(pointAnnotationOptions)
         }
-        
+
         // Set click listener
         pointAnnotationManager?.addClickListener { annotation ->
             val markerId = annotation.getData()?.asString
@@ -1234,13 +1319,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     // Parse color from hex (#RRGGBB) or rgb(R, G, B) format
     private fun parseColor(colorString: String?): Int? {
         if (colorString == null) return null
-        
+
         try {
             // Handle hex format: #RRGGBB or #RGB
             if (colorString.startsWith("#")) {
                 return Color.parseColor(colorString)
             }
-            
+
             // Handle rgb format: rgb(R, G, B)
             if (colorString.lowercase().startsWith("rgb(")) {
                 val values = colorString
@@ -1248,7 +1333,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     .replace(")", "")
                     .split(",")
                     .map { it.trim().toInt() }
-                
+
                 if (values.size == 3) {
                     return Color.rgb(values[0], values[1], values[2])
                 }
@@ -1335,7 +1420,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-    private fun update() {
+    private fun performUpdate() {
         voiceInstructionsPlayer =
                 MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
         voiceInstructionsPlayer.volume(
@@ -1349,12 +1434,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
                 updateMarkers()
+                drawPlannedRoute()
             }
         } else {
             mapboxMap.getStyle { style: Style ->
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
                 updateMarkers()
+                drawPlannedRoute()
             }
         }
 
@@ -1378,8 +1465,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             mapboxNavigation?.cancelRouteRequest(currentRoutesRequestId!!)
         }
 
-        if (currentCoordinates != null) {
-            if (isUsingRouteMatchingApi) {
+        mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
+        if (currentCoordinates != null && currentCoordinates!!.size >= 2) {
+            if (plannedMode) {
+                drawPlannedRoute()
+                plannedController.activate(currentCoordinates!!, prefetchCoordinates, routeRevision, routeDeviationTolerance, currentLocale.toLanguageTag())
+            } else if (isUsingRouteMatchingApi) {
                 requestMapMatchingRoutes()
             } else {
                 requestRoutes()

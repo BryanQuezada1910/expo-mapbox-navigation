@@ -39,8 +39,23 @@ class ExpoMapboxNavigationModule : Module() {
               "onUserOffRoute",
               "onRoutesLoaded",
               "onRouteFailedToLoad",
-              "onMarkerPress"
+              "onMarkerPress",
+              "onPlannedRouteLocation"
       )
+
+      Prop("routeMode") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteMode(value) }
+      Prop("reroutingEnabled") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setReroutingEnabled(value) }
+      Prop("routeDeviationTolerance") { view: ExpoMapboxNavigationView, value: Double? -> view.setRouteDeviationTolerance(value) }
+      Prop("routeRevision") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteRevision(value) }
+      Prop("guidanceEnabled") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setGuidanceEnabled(value) }
+      Prop("isFinalRouteChunk") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setFinalRouteChunk(value) }
+      Prop("plannedRouteCoordinates") { view: ExpoMapboxNavigationView, value: List<Map<String, Double>>? ->
+        view.setPlannedRouteCoordinates(value?.map { Point.fromLngLat(it.getValue("longitude"), it.getValue("latitude")) } ?: emptyList())
+      }
+      Prop("prefetchCoordinates") { view: ExpoMapboxNavigationView, value: List<Map<String, Double>>? ->
+        view.setPrefetchCoordinates(value?.map { Point.fromLngLat(it.getValue("longitude"), it.getValue("latitude")) } ?: emptyList())
+      }
+      Prop("plannedRouteProgress") { view: ExpoMapboxNavigationView, value: Map<String, Double>? -> view.setPlannedRouteProgress(value) }
 
       Prop("coordinates") { view: ExpoMapboxNavigationView, coordinates: List<Map<String, Any>> ->
         val points = mutableListOf<Point>()

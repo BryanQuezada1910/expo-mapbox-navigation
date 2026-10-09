@@ -1,5 +1,6 @@
 import { requireNativeViewManager } from "expo-modules-core";
 import * as React from "react";
+import { usePlannedRoute } from "./hooks/planned-route/usePlannedRoute";
 
 import {
   ExpoMapboxNavigationViewProps,
@@ -13,5 +14,6 @@ export default React.forwardRef<
   ExpoMapboxNavigationViewRef,
   ExpoMapboxNavigationViewProps
 >((props, ref) => {
-  return <NativeView {...props} ref={ref} />;
+  const navigationProps = usePlannedRoute(props);
+  return <NativeView {...navigationProps} ref={ref} />;
 });

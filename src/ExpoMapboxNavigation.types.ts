@@ -2,7 +2,9 @@
 import { ViewStyle, StyleProp } from "react-native/types";
 import { Ref } from "react";
 
-type ProgressEvent = {
+export type Coordinate = { latitude: number; longitude: number };
+export type GuidanceState = "preparing" | "available" | "unavailable";
+export type ProgressEvent = {
   distanceRemaining: number;
   distanceTraveled: number;
   durationRemaining: number;
@@ -17,7 +19,23 @@ type Route = {
     destination?: { latitude: number; longitude: number };
     steps: Array<{
       shape?: {
-        coordinates: Array<{ latitude: number; longitude: number }>;
+        coordinates: Coordinate[];
+        routeMode?: "calculated" | "planned";
+        reroutingEnabled?: boolean;
+        routeDeviationTolerance?: number;
+        plannedRouteDistance?: number;
+        plannedRouteDuration?: number;
+        onGuidanceStateChanged?: (event: {
+          nativeEvent: { state: GuidanceState; errorMessage?: string };
+        }) => void;
+        /** Internal native bridge props, managed by the wrapper. */
+        plannedRouteCoordinates?: Coordinate[];
+        prefetchCoordinates?: Coordinate[];
+        routeRevision?: string;
+        guidanceEnabled?: boolean;
+        isFinalRouteChunk?: boolean;
+        plannedRouteProgress?: ProgressEvent;
+        onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;
       };
     }>;
   }>;
@@ -59,7 +77,23 @@ export type ExpoMapboxNavigationViewRef = {
 
 export type ExpoMapboxNavigationViewProps = {
   ref?: Ref<ExpoMapboxNavigationViewRef>;
-  coordinates: Array<{ latitude: number; longitude: number }>;
+  coordinates: Coordinate[];
+  routeMode?: "calculated" | "planned";
+  reroutingEnabled?: boolean;
+  routeDeviationTolerance?: number;
+  plannedRouteDistance?: number;
+  plannedRouteDuration?: number;
+  onGuidanceStateChanged?: (event: {
+    nativeEvent: { state: GuidanceState; errorMessage?: string };
+  }) => void;
+  /** Internal native bridge props, managed by the wrapper. */
+  plannedRouteCoordinates?: Coordinate[];
+  prefetchCoordinates?: Coordinate[];
+  routeRevision?: string;
+  guidanceEnabled?: boolean;
+  isFinalRouteChunk?: boolean;
+  plannedRouteProgress?: ProgressEvent;
+  onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;
   waypointIndices?: number[];
   useRouteMatchingApi?: boolean;
   locale?: string;
