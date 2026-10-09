@@ -15,8 +15,22 @@ const path = require("path");
  */
 
 const applyPodfilePostInstallModifications = (src, mapboxMapsVersion) => {
+  const versionEnv =
+    mapboxMapsVersion &&
+    mapboxMapsVersion !== "undefined" &&
+    String(mapboxMapsVersion).trim() !== ""
+      ? `ENV['ExpoNavigationMapboxMapsVersion'] = '${mapboxMapsVersion}'\n`
+      : "";
+
+  if (
+    src.includes("BUILD_LIBRARY_FOR_DISTRIBUTION") &&
+    src.includes("MapboxMaps")
+  ) {
+    return versionEnv ? versionEnv + src : src;
+  }
+
   return (
-    `ENV['ExpoNavigationMapboxMapsVersion'] = '${mapboxMapsVersion}'\n` +
+    versionEnv +
     src.replace(
       "post_install do |installer|",
       `post_install do |installer|

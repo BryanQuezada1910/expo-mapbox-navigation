@@ -11,21 +11,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class ExpoMapboxNavigationModule : Module() {
-  private val activity
-    get() = requireNotNull(appContext.activityProvider?.currentActivity)
-
   @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
   override fun definition() = ModuleDefinition {
     Name("ExpoMapboxNavigation")
 
     OnActivityEntersForeground {
-      (activity as LifecycleOwner).lifecycleScope.launch(Dispatchers.Main) {
+      val currentActivity = appContext.activityProvider?.currentActivity ?: return@OnActivityEntersForeground
+      val applicationContext = currentActivity.applicationContext
+
+      (currentActivity as LifecycleOwner).lifecycleScope.launch(Dispatchers.Main) {
         if (!MapboxNavigationApp.isSetup()) {
           MapboxNavigationApp.setup {
-            NavigationOptions.Builder(activity.applicationContext).build()
+            NavigationOptions.Builder(applicationContext).build()
           }
         }
-        MapboxNavigationApp.attach(activity as LifecycleOwner)
+        MapboxNavigationApp.attach(currentActivity as LifecycleOwner)
       }
     }
 
@@ -38,8 +38,24 @@ class ExpoMapboxNavigationModule : Module() {
               "onRouteChanged",
               "onUserOffRoute",
               "onRoutesLoaded",
-              "onRouteFailedToLoad"
+              "onRouteFailedToLoad",
+              "onMarkerPress",
+              "onPlannedRouteLocation"
       )
+
+      Prop("routeMode") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteMode(value) }
+      Prop("reroutingEnabled") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setReroutingEnabled(value) }
+      Prop("routeDeviationTolerance") { view: ExpoMapboxNavigationView, value: Double? -> view.setRouteDeviationTolerance(value) }
+      Prop("routeRevision") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteRevision(value) }
+      Prop("guidanceEnabled") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setGuidanceEnabled(value) }
+      Prop("isFinalRouteChunk") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setFinalRouteChunk(value) }
+      Prop("plannedRouteCoordinates") { view: ExpoMapboxNavigationView, value: List<Map<String, Double>>? ->
+        view.setPlannedRouteCoordinates(value?.map { Point.fromLngLat(it.getValue("longitude"), it.getValue("latitude")) } ?: emptyList())
+      }
+      Prop("prefetchCoordinates") { view: ExpoMapboxNavigationView, value: List<Map<String, Double>>? ->
+        view.setPrefetchCoordinates(value?.map { Point.fromLngLat(it.getValue("longitude"), it.getValue("latitude")) } ?: emptyList())
+      }
+      Prop("plannedRouteProgress") { view: ExpoMapboxNavigationView, value: Map<String, Double>? -> view.setPlannedRouteProgress(value) }
 
       Prop("coordinates") { view: ExpoMapboxNavigationView, coordinates: List<Map<String, Any>> ->
         val points = mutableListOf<Point>()
@@ -112,6 +128,18 @@ class ExpoMapboxNavigationModule : Module() {
 
       Prop("followingZoom") { view: ExpoMapboxNavigationView, followingZoom: Double? ->
         view.setFollowingZoom(followingZoom)
+      }
+
+      Prop("markers") { view: ExpoMapboxNavigationView, markers: List<Map<String, Any>>? ->
+        view.setMarkers(markers)
+      }
+
+      Prop("bottomLegend") { view: ExpoMapboxNavigationView, text: String? ->
+        view.setBottomLegend(text)
+      }
+
+      Prop("showCancelButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowCancelButton(show)
       }
 
       AsyncFunction("recenterMap") { view: ExpoMapboxNavigationView -> view.recenterMap() }

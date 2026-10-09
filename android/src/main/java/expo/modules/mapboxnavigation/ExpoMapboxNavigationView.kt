@@ -15,6 +15,7 @@ import androidx.constraintlayout.widget.ConstraintSet
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import com.mapbox.api.directions.v5.models.RouteOptions
+import com.mapbox.navigation.base.options.NavigationOptions
 import com.mapbox.bindgen.Expected
 import com.mapbox.common.location.Location
 import com.mapbox.geojson.Point
@@ -35,8 +36,19 @@ import com.mapbox.maps.plugin.LocationPuck2D
 import com.mapbox.maps.plugin.animation.camera
 import com.mapbox.maps.plugin.locationcomponent.OnIndicatorPositionChangedListener
 import com.mapbox.maps.plugin.locationcomponent.location
+import com.mapbox.maps.plugin.annotation.annotations
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotation
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationManager
+import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
+import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import androidx.core.content.ContextCompat
+import com.mapbox.api.directions.v5.DirectionsCriteria
 import com.mapbox.navigation.base.extensions.applyDefaultNavigationOptions
 import com.mapbox.navigation.base.formatter.DistanceFormatterOptions
+import com.mapbox.navigation.base.formatter.UnitType
 import com.mapbox.navigation.base.route.NavigationRoute
 import com.mapbox.navigation.base.route.NavigationRouterCallback
 import com.mapbox.navigation.base.route.RouterFailure
@@ -64,10 +76,13 @@ import com.mapbox.navigation.tripdata.progress.model.EstimatedTimeToArrivalForma
 import com.mapbox.navigation.tripdata.progress.model.TimeRemainingFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateValue
+import com.mapbox.navigation.tripdata.speedlimit.api.MapboxSpeedInfoApi
 import com.mapbox.navigation.ui.base.util.MapboxNavigationConsumer
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverPrimaryOptions
 import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
 import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
+import android.graphics.drawable.GradientDrawable
+import android.widget.FrameLayout
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRecenterButton
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRouteOverviewButton
 import com.mapbox.navigation.ui.components.voice.view.MapboxSoundButton
@@ -97,6 +112,7 @@ import java.util.Locale
 
 val PIXEL_DENSITY = Resources.getSystem().displayMetrics.density
 
+@OptIn(com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI::class)
 class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         ExpoView(context, appContext) {
 
@@ -107,9 +123,35 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     // https://github.com/mapbox/mapbox-navigation-android/blob/188d4781b31bb328733eeca593edc8087e38d915/ui-utils/src/main/java/com/mapbox/navigation/ui/utils/internal/lifecycle/ViewLifecycleRegistry.kt#L67
     init {
         this.setViewTreeLifecycleOwner(
-                appContext.activityProvider?.currentActivity as LifecycleOwner
+                appContext.activityProvider?.currentActivity as? LifecycleOwner
         )
     }
+
+    private var plannedMode = false
+    private var reroutingEnabled = true
+    private var routeDeviationTolerance = 25.0
+    private var routeRevision = ""
+    private var installedRouteRevision = ""
+    private var installedRouteGeometry: String? = null
+    private var guidanceEnabled = false
+    private var finalRouteChunk = true
+    private var suppressPlannedInstruction = false
+    private var plannedCoordinates = emptyList<Point>()
+    private var prefetchCoordinates = emptyList<Point>()
+    private val updateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val updateRunnable = Runnable { performUpdate() }
+    private val plannedController by lazy {
+        PlannedRouteController({ mapboxNavigation }, { routes, revision ->
+            if (plannedMode && routeRevision == revision) {
+                installedRouteRevision = revision
+                installedRouteGeometry = routes.firstOrNull()?.directionsRoute?.geometry()
+                onRoutesReady(routes)
+            }
+        }, { message, revision ->
+            if (plannedMode && routeRevision == revision) onRouteFailedToLoad(mapOf("errorMessage" to message, "routeRevision" to revision))
+        })
+    }
+    private val onPlannedRouteLocation by EventDispatcher()
 
     private var isMuted = false
     private var currentCoordinates: List<Point>? = null
@@ -127,6 +169,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var currentFollowingZoom: Double? = null
     private var vehicleMaxHeight: Double? = null
     private var vehicleMaxWidth: Double? = null
+    private var currentMarkers: List<Map<String, Any>>? = null
+    private var pointAnnotationManager: PointAnnotationManager? = null
 
     private val onRouteProgressChanged by EventDispatcher()
     private val onCancelNavigation by EventDispatcher()
@@ -136,8 +180,22 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val onUserOffRoute by EventDispatcher()
     private val onRoutesLoaded by EventDispatcher()
     private val onRouteFailedToLoad by EventDispatcher()
+    private val onMarkerPress by EventDispatcher()
 
-    private val mapboxNavigation = MapboxNavigationApp.current()
+    private val mapboxNavigation: com.mapbox.navigation.core.MapboxNavigation?
+        get() {
+            if (!MapboxNavigationApp.isSetup()) {
+                val currentActivity = appContext.activityProvider?.currentActivity
+                if (currentActivity != null) {
+                    MapboxNavigationApp.setup {
+                        NavigationOptions.Builder(currentActivity.applicationContext).build()
+                    }
+                    MapboxNavigationApp.attach(currentActivity as LifecycleOwner)
+                }
+            }
+            return if (MapboxNavigationApp.isSetup()) MapboxNavigationApp.current() else null
+        }
+
     private var mapboxStyle: Style? = null
     private val navigationLocationProvider = NavigationLocationProvider()
     private var voiceInstructionsPlayer =
@@ -164,16 +222,26 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val maneuverView = createManueverView(maneuverViewId, parentConstraintLayout)
 
     private val tripProgressViewId = 3
-    private val tripProgressTimeRemainingTextView = createCenteredTextView()
+    private val tripProgressTimeRemainingTextView = createCenteredTextView().apply {
+        minHeight = (48 * PIXEL_DENSITY).toInt() // Ensure large spanned text is not clipped
+        includeFontPadding = true
+    }
     private val tripProgressDistanceRemainingTextView = createCenteredTextView()
     private val tripProgressArrivalTimeTextView = createCenteredTextView()
+    private val tripProgressLegendTextView = createCenteredTextView().apply {
+        textSize = 12f // 12sp
+        setTextColor(Color.parseColor("#808080")) // Gray text
+        setPadding(0, (2 * PIXEL_DENSITY).toInt(), 0, (2 * PIXEL_DENSITY).toInt())
+        visibility = View.GONE
+    }
     private val tripProgressView =
             createTripProgressView(
                     id = tripProgressViewId,
                     parent = parentConstraintLayout,
                     tripProgressTimeRemainingTextView = tripProgressTimeRemainingTextView,
                     tripProgressDistanceRemainingTextView = tripProgressDistanceRemainingTextView,
-                    tripProgressArrivalTimeTextView = tripProgressArrivalTimeTextView
+                    tripProgressArrivalTimeTextView = tripProgressArrivalTimeTextView,
+                    tripProgressLegendTextView = tripProgressLegendTextView
             )
 
     private val soundButtonId = 4
@@ -205,6 +273,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 onCancelNavigation(mapOf())
             }
 
+    private val speedLimitViewId = 8
+    private val speedLimitTextView = TextView(context)
+    private val speedLimitContainer = createSpeedLimitView(speedLimitViewId, parentConstraintLayout, speedLimitTextView)
+    private val speedInfoApi = MapboxSpeedInfoApi()
+
     private val parentConstraintSet =
             createAndApplyConstraintSet(
                     mapViewId = mapViewId,
@@ -214,6 +287,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     overviewButtonId = overviewButtonId,
                     recenterButtonId = recenterButtonId,
                     cancelButtonId = cancelButtonId,
+                    speedLimitViewId = speedLimitViewId,
                     constraintLayout = parentConstraintLayout
             )
 
@@ -232,6 +306,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeArrowView = MapboxRouteArrowView(routeArrowOptions)
 
     private val distanceFormatter = DistanceFormatterOptions.Builder(context).build()
+    private val metricDistanceFormatter = DistanceFormatterOptions.Builder(context).unitType(UnitType.METRIC).build()
+    private val imperialDistanceFormatter = DistanceFormatterOptions.Builder(context).unitType(UnitType.IMPERIAL).build()
+
+    private fun isUS(lat: Double, lon: Double): Boolean {
+        if (lat > 32.72) return true
+        if (lat < 25.83) return false
+        val borderLat = when {
+            lon < -117.10 -> 32.53
+            lon < -106.48 -> 32.53 + (31.76 - 32.53) * ((lon - -117.10) / (-106.48 - -117.10))
+            lon < -97.43 -> 31.76 + (25.89 - 31.76) * ((lon - -106.48) / (-97.43 - -106.48))
+            else -> 25.89
+        }
+        return lat >= borderLat
+    }
+
     private var maneuverApi = MapboxManeuverApi(MapboxDistanceFormatter(distanceFormatter))
 
     private var tripProgressFormatter =
@@ -248,6 +337,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     private val speechCallback =
             MapboxNavigationConsumer<Expected<SpeechError, SpeechValue>> { expected ->
+                if (plannedMode && (!guidanceEnabled || suppressPlannedInstruction)) return@MapboxNavigationConsumer
                 expected.fold(
                         { error ->
                             voiceInstructionsPlayer.play(
@@ -264,7 +354,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 )
             }
     private val voiceInstructionsObserver = VoiceInstructionsObserver { voiceInstructions ->
-        speechApi.generate(voiceInstructions, speechCallback)
+        if (!plannedMode || (guidanceEnabled && !suppressPlannedInstruction)) speechApi.generate(voiceInstructions, speechCallback)
     }
 
     private val routesRequestCallback =
@@ -273,14 +363,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         routes: List<NavigationRoute>,
                         @RouterOrigin routerOrigin: String
                 ) {
-                    onRoutesReady(routes)
+                    if (isAttachedToWindow && !plannedMode) onRoutesReady(routes)
                 }
                 override fun onCanceled(
                         routeOptions: RouteOptions,
                         @RouterOrigin routerOrigin: String
                 ) {}
                 override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
-                    onRouteFailedToLoad(mapOf("errorMessage" to reasons.first().message))
+                    if (isAttachedToWindow && !plannedMode) onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: "No se pudo cargar la ruta")))
                 }
             }
 
@@ -288,17 +378,24 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val mapMatchingRequestCallback =
             object : MapMatchingAPICallback {
                 override fun success(result: MapMatchingSuccessfulResult) {
-                    onRoutesReady(result.navigationRoutes)
+                    if (isAttachedToWindow && !plannedMode) onRoutesReady(result.navigationRoutes)
                 }
                 override fun onCancel() {}
-                override fun failure(failure: MapMatchingFailure) {}
+                override fun failure(failure: MapMatchingFailure) {
+                    if (!isAttachedToWindow || plannedMode) return
+                    android.util.Log.e("Mapbox", "Map matching failed: ${failure.toString()}. Falling back to regular routing...")
+                    requestRoutes()
+                }
             }
 
     private val routesObserver =
             object : RoutesObserver {
                 override fun onRoutesChanged(result: RoutesUpdatedResult) {
+                    if (result.navigationRoutes.isEmpty()) return
+                    if (plannedMode && result.navigationRoutes.first().directionsRoute.geometry() != installedRouteGeometry) return
                     onRoutesLoaded(
                             mapOf(
+                                    "routeRevision" to installedRouteRevision,
                                     "routes" to
                                             mapOf(
                                                     "mainRoute" to
@@ -325,7 +422,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     // Handle route lines
                     val alternativesMetadata =
                             mapboxNavigation?.getAlternativeMetadataFor(result.navigationRoutes)
-                    if (alternativesMetadata != null) {
+                    if (!plannedMode && alternativesMetadata != null) {
                         routeLineApi.setNavigationRoutes(
                                 result.navigationRoutes,
                                 alternativesMetadata
@@ -359,18 +456,22 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeProgressObserver =
             object : RouteProgressObserver {
                 override fun onRouteProgressChanged(routeProgress: RouteProgress) {
+                    val arrival = routeProgress.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type() == "arrive" || routeProgress.currentLegProgress?.upcomingStep?.maneuver()?.type() == "arrive"
+                    suppressPlannedInstruction = plannedMode && (!guidanceEnabled || (!finalRouteChunk && arrival))
+                    if (suppressPlannedInstruction) { maneuverView.visibility = View.INVISIBLE; return }
+                    maneuverView.visibility = View.VISIBLE
                     // Handle viewport data source
                     viewportDataSource.onRouteProgressChanged(routeProgress)
                     viewportDataSource.evaluate()
 
                     // Handle route lines
-                    routeLineApi.updateWithRouteProgress(routeProgress) { result ->
+                    if (!plannedMode) routeLineApi.updateWithRouteProgress(routeProgress) { result ->
                         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
                     }
 
                     // Handle route arrows
-                    val updatedManeuverArrow = routeArrow.addUpcomingManeuverArrow(routeProgress)
-                    mapboxStyle?.let {
+                    val updatedManeuverArrow = if (!plannedMode) routeArrow.addUpcomingManeuverArrow(routeProgress) else null
+                    if (!plannedMode && updatedManeuverArrow != null) mapboxStyle?.let {
                         routeArrowView.renderManeuverUpdate(it, updatedManeuverArrow)
                     }
 
@@ -379,7 +480,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     maneuverView.renderManeuvers(maneuvers)
 
                     // Handle trip progress view
-                    tripProgressApi.getTripProgress(routeProgress).let {
+                    if (!plannedMode) tripProgressApi.getTripProgress(routeProgress).let {
                             update: TripProgressUpdateValue ->
                         val formatter = update.formatter
                         tripProgressTimeRemainingTextView.text =
@@ -406,13 +507,50 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             object : LocationObserver {
                 override fun onNewLocationMatcherResult(
                         locationMatcherResult: LocationMatcherResult
-                ) {}
+                ) {
+                    if (plannedMode) return
+                    // Update puck location with enhanced (map-matched) location
+                    val enhancedLocation = locationMatcherResult.enhancedLocation
+                    navigationLocationProvider.changePosition(
+                            location = enhancedLocation,
+                            keyPoints = locationMatcherResult.keyPoints,
+                    )
+
+                    // Update viewport data source with enhanced location
+                    viewportDataSource.onLocationChanged(enhancedLocation)
+                    viewportDataSource.evaluate()
+
+                    // Update speed limit display
+                    try {
+                        val lat = enhancedLocation.latitude
+                        val lon = enhancedLocation.longitude
+                        val inUS = isUS(lat, lon)
+                        val speedLimitFormatter = if (inUS) imperialDistanceFormatter else metricDistanceFormatter
+
+                        val speedInfo = speedInfoApi.updatePostedAndCurrentSpeed(
+                                locationMatcherResult,
+                                speedLimitFormatter
+                        )
+                        if (speedInfo != null && speedInfo.postedSpeed != null) {
+                            val unitStr = if (inUS) "mph" else "km/h"
+                            speedLimitTextView.text = "${speedInfo.postedSpeed}\n$unitStr"
+                            // reduce text size slightly when unit is included to ensure it fits the circle
+                            speedLimitTextView.textSize = 16f
+                            speedLimitContainer.visibility = View.VISIBLE
+                        } else {
+                            speedLimitContainer.visibility = View.GONE
+                        }
+                    } catch (e: Exception) {
+                        speedLimitContainer.visibility = View.GONE
+                    }
+                }
                 override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
-                    // Update puck location
+                    if (plannedMode) onPlannedRouteLocation(mapOf("latitude" to rawLocation.latitude, "longitude" to rawLocation.longitude))
+                    // Also update from raw location as fallback
+                    // (e.g. before trip session starts or when map matching is unavailable)
                     navigationLocationProvider.changePosition(
                             location = rawLocation,
                     )
-                    // Update viewport data source
                     viewportDataSource.onLocationChanged(rawLocation)
                     viewportDataSource.evaluate()
                 }
@@ -421,6 +559,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val arrivalObserver =
             object : ArrivalObserver {
                 override fun onWaypointArrival(routeProgress: RouteProgress) {
+                    if (plannedMode) return
                     onWaypointArrival(
                             mapOf(
                                     "distanceRemaining" to routeProgress.distanceRemaining,
@@ -432,6 +571,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 }
                 override fun onNextRouteLegStart(routeLegProgress: RouteLegProgress) {}
                 override fun onFinalDestinationArrival(routeProgress: RouteProgress) {
+                    if (plannedMode && (!finalRouteChunk || !guidanceEnabled)) return
                     onFinalDestinationArrival(mapOf())
                 }
             }
@@ -446,6 +586,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             }
 
     private val onIndicatorPositionChangedListener = OnIndicatorPositionChangedListener { point ->
+        if (plannedMode) return@OnIndicatorPositionChangedListener
         val result = routeLineApi.updateTraveledRouteLine(point)
         mapboxStyle?.let { routeLineView.renderRouteLineUpdate(it, result) }
     }
@@ -455,7 +596,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             setId(id)
             parent.addView(this)
 
-            mapboxMap.loadStyle(Style.MAPBOX_STREETS) { style: Style -> mapboxStyle = style }
+            mapboxMap.loadStyle(Style.MAPBOX_STREETS) { style: Style -> mapboxStyle = style; drawPlannedRoute() }
 
             location.apply {
                 locationPuck =
@@ -505,43 +646,54 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             parent: ViewGroup,
             tripProgressTimeRemainingTextView: TextView,
             tripProgressDistanceRemainingTextView: TextView,
-            tripProgressArrivalTimeTextView: TextView
+            tripProgressArrivalTimeTextView: TextView,
+            tripProgressLegendTextView: TextView
     ): LinearLayout {
         return LinearLayout(context).apply {
             setId(id)
             parent.addView(this)
             setOrientation(LinearLayout.VERTICAL)
             setBackgroundColor(Color.WHITE)
+            // Bottom padding accounts for system navigation bar
+            val navBarHeight = getNavigationBarHeight(context)
             setPadding(
                     (5 * PIXEL_DENSITY).toInt(),
+                    (10 * PIXEL_DENSITY).toInt(),
                     (5 * PIXEL_DENSITY).toInt(),
-                    (5 * PIXEL_DENSITY).toInt(),
-                    (5 * PIXEL_DENSITY).toInt()
+                    (8 * PIXEL_DENSITY).toInt() + navBarHeight / 2
+            )
+
+            // Leyenda al principio (arriba de todo)
+            addView(
+                tripProgressLegendTextView,
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT
             )
 
             addView(
                     tripProgressTimeRemainingTextView,
                     LayoutParams.MATCH_PARENT,
-                    (40 * PIXEL_DENSITY).toInt()
+                    LayoutParams.WRAP_CONTENT
             )
 
             val bottomContainer =
                     LinearLayout(context).apply {
                         setOrientation(LinearLayout.HORIZONTAL)
-                        setGravity(Gravity.CENTER)
                         addView(
                                 tripProgressDistanceRemainingTextView,
-                                (60 * PIXEL_DENSITY).toInt(),
-                                (20 * PIXEL_DENSITY).toInt()
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                         )
                         addView(
                                 tripProgressArrivalTimeTextView,
-                                (60 * PIXEL_DENSITY).toInt(),
-                                (20 * PIXEL_DENSITY).toInt()
+                                LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
                         )
                     }
 
-            addView(bottomContainer, LayoutParams.MATCH_PARENT, (20 * PIXEL_DENSITY).toInt())
+            addView(
+                    bottomContainer,
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.WRAP_CONTENT
+            )
         }
     }
 
@@ -602,6 +754,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
+    private fun createSpeedLimitView(id: Int, parent: ViewGroup, textView: TextView): FrameLayout {
+        val size = (64 * PIXEL_DENSITY).toInt()
+        val container = FrameLayout(context).apply {
+            setId(id)
+
+            // Circle background with red border (Vienna convention style)
+            val circleDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+                setStroke((3 * PIXEL_DENSITY).toInt(), Color.RED)
+            }
+            background = circleDrawable
+            elevation = 10f * PIXEL_DENSITY
+            visibility = View.GONE
+        }
+
+        // Speed limit text
+        textView.apply {
+            setTextColor(Color.BLACK)
+            textSize = 20f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+
+        container.addView(textView, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+
+        val lp = ConstraintLayout.LayoutParams(size, size)
+        parent.addView(container, lp)
+        return container
+    }
+
     private fun createAndApplyConstraintSet(
             mapViewId: Int,
             maneuverViewId: Int,
@@ -610,6 +796,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             overviewButtonId: Int,
             recenterButtonId: Int,
             cancelButtonId: Int,
+            speedLimitViewId: Int,
             constraintLayout: ConstraintLayout
     ): ConstraintSet {
         return ConstraintSet().apply {
@@ -662,14 +849,33 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     ConstraintSet.PARENT_ID,
                     ConstraintSet.END
             )
-            constrainMinHeight(tripProgressViewId, (80 * PIXEL_DENSITY).toInt())
+            constrainHeight(tripProgressViewId, ConstraintSet.WRAP_CONTENT)
             constrainWidth(tripProgressViewId, ConstraintSet.MATCH_CONSTRAINT)
 
-            // Add SoundButton constraints
+            // Add SpeedLimitView constraints (above sound button, right side)
+            val speedLimitSize = (64 * PIXEL_DENSITY).toInt()
+            connect(
+                    speedLimitViewId,
+                    ConstraintSet.TOP,
+                    maneuverViewId,
+                    ConstraintSet.BOTTOM,
+                    (8 * PIXEL_DENSITY).toInt()
+            )
+            connect(
+                    speedLimitViewId,
+                    ConstraintSet.END,
+                    ConstraintSet.PARENT_ID,
+                    ConstraintSet.END,
+                    (16 * PIXEL_DENSITY).toInt()
+            )
+            constrainWidth(speedLimitViewId, speedLimitSize)
+            constrainHeight(speedLimitViewId, speedLimitSize)
+
+            // Add SoundButton constraints (below speed limit view)
             connect(
                     soundButtonId,
                     ConstraintSet.TOP,
-                    maneuverViewId,
+                    speedLimitViewId,
                     ConstraintSet.BOTTOM,
                     (8 * PIXEL_DENSITY).toInt()
             )
@@ -788,10 +994,15 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         mapboxNavigation?.registerArrivalObserver(arrivalObserver)
         mapboxNavigation?.registerOffRouteObserver(offRouteObserver)
         mapView.location.addOnIndicatorPositionChangedListener(onIndicatorPositionChangedListener)
+        mapboxNavigation?.startTripSession(withForegroundService = false)
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        currentRoutesRequestId?.let { mapboxNavigation?.cancelRouteRequest(it) }
+        currentMapMatchingRequestId?.let { mapboxNavigation?.cancelMapMatchingRequest(it) }
+        updateHandler.removeCallbacks(updateRunnable)
+        plannedController.reset()
         mapboxNavigation?.unregisterRoutesObserver(routesObserver)
         mapboxNavigation?.unregisterRouteProgressObserver(routeProgressObserver)
         mapboxNavigation?.unregisterLocationObserver(locationObserver)
@@ -850,6 +1061,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     private fun onRoutesReady(routes: List<NavigationRoute>) {
+        mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
         mapboxNavigation?.setNavigationRoutes(routes)
         mapboxNavigation?.startTripSession(withForegroundService = false)
         navigationCamera.requestNavigationCameraToFollowing(
@@ -861,6 +1073,43 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    fun setRouteMode(value: String?) { plannedMode = value == "planned"; update() }
+    fun setReroutingEnabled(value: Boolean?) { reroutingEnabled = value ?: true; update() }
+    fun setRouteDeviationTolerance(value: Double?) {
+        val next = value?.takeIf { it.isFinite() && it > 0 && it <= 50 } ?: 25.0
+        if (next != routeDeviationTolerance) plannedController.reset()
+        routeDeviationTolerance = next
+        update()
+    }
+    fun setRouteRevision(value: String?) { routeRevision = value ?: ""; update() }
+    fun setPrefetchCoordinates(value: List<Point>) { prefetchCoordinates = value; update() }
+    fun setFinalRouteChunk(value: Boolean?) { finalRouteChunk = value ?: true }
+    fun setGuidanceEnabled(value: Boolean?) {
+        guidanceEnabled = value ?: false
+        if (plannedMode && !guidanceEnabled) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
+        maneuverView.visibility = if (plannedMode && !guidanceEnabled) View.INVISIBLE else View.VISIBLE
+    }
+    fun setPlannedRouteCoordinates(value: List<Point>) {
+        if (plannedCoordinates != value) plannedController.reset()
+        plannedCoordinates = value
+        drawPlannedRoute()
+    }
+    fun setPlannedRouteProgress(value: Map<String, Double>?) {
+        if (!plannedMode || value == null) return
+        tripProgressDistanceRemainingTextView.text = String.format(currentLocale, "%.1f km", (value["distanceRemaining"] ?: 0.0) / 1000)
+        val seconds = value["durationRemaining"] ?: 0.0
+        tripProgressTimeRemainingTextView.text = if (seconds > 0) String.format(currentLocale, "%.0f min", seconds / 60) else "—"
+        tripProgressArrivalTimeTextView.text = ""
+    }
+    private fun drawPlannedRoute() {
+        if (plannedMode) mapboxStyle?.let { PlannedRouteRenderer.draw(it, plannedCoordinates) }
+    }
+    @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
+    private fun update() {
+        updateHandler.removeCallbacks(updateRunnable)
+        updateHandler.postDelayed(updateRunnable, 80)
+    }
+
     fun setCoordinates(coordinates: List<Point>) {
         currentCoordinates = coordinates
         update()
@@ -880,9 +1129,20 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setLocale(localeStr: String?) {
+        val previousLocale = currentLocale
         currentLocale =
                 if (localeStr == null || localeStr == "default") Locale.getDefault()
                 else Locale.Builder().setLanguageTag(localeStr).build()
+
+        if (previousLocale != currentLocale) plannedController.reset()
+        try {
+            val config = context.resources.configuration
+            config.setLocale(currentLocale)
+            context.resources.updateConfiguration(config, context.resources.displayMetrics)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         update()
     }
 
@@ -963,6 +1223,170 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         navigationCamera.requestNavigationCameraToFollowing()
     }
 
+    fun setMarkers(markers: List<Map<String, Any>>?) {
+        currentMarkers = markers
+        updateMarkers()
+    }
+
+    private fun updateMarkers() {
+        // Create annotation manager if it doesn't exist
+        if (pointAnnotationManager == null) {
+            pointAnnotationManager = mapView.annotations.createPointAnnotationManager()
+        }
+
+        // Clear existing annotations
+        pointAnnotationManager?.deleteAll()
+
+        val markers = currentMarkers ?: return
+
+        // Store marker data for click handling
+        val markerDataMap = mutableMapOf<String, Map<String, Any>>()
+
+        for ((index, marker) in markers.withIndex()) {
+            val lat = marker["latitude"] as? Double ?: continue
+            val lon = marker["longitude"] as? Double ?: continue
+            val iconName = marker["iconName"] as? String
+            val markerId = marker["id"] as? String ?: "marker-$index"
+            val colorString = marker["color"] as? String
+
+            // Parse color (default to red)
+            val markerColor = parseColor(colorString) ?: Color.RED
+
+            // Store marker data
+            markerDataMap[markerId] = marker
+
+            val point = Point.fromLngLat(lon, lat)
+
+            val pointAnnotationOptions = PointAnnotationOptions()
+                .withPoint(point)
+                .withData(com.google.gson.JsonPrimitive(markerId))
+
+            // Try to load custom icon or use default marker
+            if (iconName != null) {
+                val resourceId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
+                if (resourceId != 0) {
+                    val drawable = ContextCompat.getDrawable(context, resourceId)
+                    if (drawable != null) {
+                        val bitmap = Bitmap.createBitmap(
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        pointAnnotationOptions.withIconImage(bitmap)
+                    }
+                }
+            } else {
+                val letter = (marker["markerLetter"] as? String)?.take(1) ?: "P"
+                val defaultBitmap = createDefaultMarkerBitmap(markerColor, letter)
+                pointAnnotationOptions.withIconImage(defaultBitmap)
+            }
+
+            pointAnnotationManager?.create(pointAnnotationOptions)
+        }
+
+        // Set click listener
+        pointAnnotationManager?.addClickListener { annotation ->
+            val markerId = annotation.getData()?.asString
+            if (markerId != null && markerDataMap.containsKey(markerId)) {
+                val markerData = markerDataMap[markerId]!!
+                onMarkerPress(markerData)
+            }
+            true
+        }
+
+    }
+
+    fun setBottomLegend(legend: String?) {
+        if (legend.isNullOrEmpty()) {
+            tripProgressLegendTextView.visibility = View.GONE
+        } else {
+            tripProgressLegendTextView.text = legend
+            tripProgressLegendTextView.visibility = View.VISIBLE
+        }
+    }
+
+    fun setShowCancelButton(show: Boolean?) {
+        if (show == false) {
+            cancelButton.visibility = View.GONE
+        } else {
+            cancelButton.visibility = View.VISIBLE
+        }
+    }
+
+    // Parse color from hex (#RRGGBB) or rgb(R, G, B) format
+    private fun parseColor(colorString: String?): Int? {
+        if (colorString == null) return null
+
+        try {
+            // Handle hex format: #RRGGBB or #RGB
+            if (colorString.startsWith("#")) {
+                return Color.parseColor(colorString)
+            }
+
+            // Handle rgb format: rgb(R, G, B)
+            if (colorString.lowercase().startsWith("rgb(")) {
+                val values = colorString
+                    .replace("rgb(", "", ignoreCase = true)
+                    .replace(")", "")
+                    .split(",")
+                    .map { it.trim().toInt() }
+
+                if (values.size == 3) {
+                    return Color.rgb(values[0], values[1], values[2])
+                }
+            }
+        } catch (e: Exception) {
+            // Return null if parsing fails
+        }
+        return null
+    }
+
+    /**
+     * Crea un marcador por defecto: círculo con borde blanco, relleno de color y letra centrada.
+     * La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
+     */
+    private fun createDefaultMarkerBitmap(markerColor: Int = Color.RED, letter: String = "P"): Bitmap {
+        val size = (56 * PIXEL_DENSITY).toInt()
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val cx = size / 2f
+        val cy = size / 2f
+        val radius = (size / 2f) - (4 * PIXEL_DENSITY)
+
+        val strokePaint = Paint().apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 3 * PIXEL_DENSITY
+            isAntiAlias = true
+        }
+        canvas.drawCircle(cx, cy, radius, strokePaint)
+
+        val fillPaint = Paint().apply {
+            color = markerColor
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        canvas.drawCircle(cx, cy, radius - strokePaint.strokeWidth / 2f, fillPaint)
+
+        val text = letter.take(1).ifEmpty { "P" }
+        val textPaint = Paint().apply {
+            color = Color.WHITE
+            textSize = 18 * PIXEL_DENSITY
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            isAntiAlias = true
+            textAlign = Paint.Align.CENTER
+        }
+        val bounds = android.graphics.Rect()
+        textPaint.getTextBounds(text, 0, text.length, bounds)
+        val textY = cy + (bounds.height() / 2f) - bounds.bottom
+        canvas.drawText(text, cx, textY, textPaint)
+
+        return bitmap
+    }
+
     fun addCustomRasterLayer() {
         val style = mapboxMap.getStyle() ?: return
 
@@ -996,7 +1420,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-    private fun update() {
+    private fun performUpdate() {
         voiceInstructionsPlayer =
                 MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
         voiceInstructionsPlayer.volume(
@@ -1009,11 +1433,15 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 mapboxStyle = style
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
+                updateMarkers()
+                drawPlannedRoute()
             }
         } else {
             mapboxMap.getStyle { style: Style ->
                 style.localizeLabels(currentLocale)
                 addCustomRasterLayer()
+                updateMarkers()
+                drawPlannedRoute()
             }
         }
 
@@ -1025,7 +1453,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 TripProgressUpdateFormatter.Builder(context)
                         .distanceRemainingFormatter(DistanceRemainingFormatter(distanceFormatter))
                         .timeRemainingFormatter(TimeRemainingFormatter(context, currentLocale))
-                        .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context))
+                        .estimatedTimeToArrivalFormatter(EstimatedTimeToArrivalFormatter(context, 0))
                         .build()
         tripProgressApi = MapboxTripProgressApi(tripProgressFormatter)
 
@@ -1037,8 +1465,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             mapboxNavigation?.cancelRouteRequest(currentRoutesRequestId!!)
         }
 
-        if (currentCoordinates != null) {
-            if (isUsingRouteMatchingApi) {
+        mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
+        if (currentCoordinates != null && currentCoordinates!!.size >= 2) {
+            if (plannedMode) {
+                drawPlannedRoute()
+                plannedController.activate(currentCoordinates!!, prefetchCoordinates, routeRevision, routeDeviationTolerance, currentLocale.toLanguageTag())
+            } else if (isUsingRouteMatchingApi) {
                 requestMapMatchingRoutes()
             } else {
                 requestRoutes()
@@ -1053,6 +1485,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         .coordinatesList(currentCoordinates!!)
                         .steps(true)
                         .voiceInstructions(true)
+                        .annotationsList(
+                                listOf(
+                                        DirectionsCriteria.ANNOTATION_SPEED,
+                                        DirectionsCriteria.ANNOTATION_MAXSPEED,
+                                        DirectionsCriteria.ANNOTATION_CONGESTION_NUMERIC,
+                                        DirectionsCriteria.ANNOTATION_DISTANCE
+                                )
+                        )
                         .language(currentLocale.toLanguageTag())
                         .maxHeight(vehicleMaxHeight ?: null)
                         .maxWidth(vehicleMaxWidth ?: null)
@@ -1088,7 +1528,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
 
         if (currentRouteProfile != null) {
-            optionsBuilder = optionsBuilder.profile(currentRouteProfile!!)
+            var matchProfile = currentRouteProfile!!
+            if (matchProfile == "driving-traffic" || matchProfile == "mapbox/driving-traffic") {
+                matchProfile = "driving"
+            }
+            optionsBuilder = optionsBuilder.profile(matchProfile)
         }
 
         currentMapMatchingRequestId =
@@ -1096,5 +1540,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         optionsBuilder.build(),
                         mapMatchingRequestCallback
                 )
+    }
+
+    private fun getNavigationBarHeight(context: Context): Int {
+        val resourceId = context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) {
+            context.resources.getDimensionPixelSize(resourceId)
+        } else {
+            (24 * PIXEL_DENSITY).toInt() // Fallback: 24dp
+        }
     }
 }

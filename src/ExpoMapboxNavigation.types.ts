@@ -2,7 +2,9 @@
 import { ViewStyle, StyleProp } from "react-native/types";
 import { Ref } from "react";
 
-type ProgressEvent = {
+export type Coordinate = { latitude: number; longitude: number };
+export type GuidanceState = "preparing" | "available" | "unavailable";
+export type ProgressEvent = {
   distanceRemaining: number;
   distanceTraveled: number;
   durationRemaining: number;
@@ -17,7 +19,23 @@ type Route = {
     destination?: { latitude: number; longitude: number };
     steps: Array<{
       shape?: {
-        coordinates: Array<{ latitude: number; longitude: number }>;
+        coordinates: Coordinate[];
+        routeMode?: "calculated" | "planned";
+        reroutingEnabled?: boolean;
+        routeDeviationTolerance?: number;
+        plannedRouteDistance?: number;
+        plannedRouteDuration?: number;
+        onGuidanceStateChanged?: (event: {
+          nativeEvent: { state: GuidanceState; errorMessage?: string };
+        }) => void;
+        /** Internal native bridge props, managed by the wrapper. */
+        plannedRouteCoordinates?: Coordinate[];
+        prefetchCoordinates?: Coordinate[];
+        routeRevision?: string;
+        guidanceEnabled?: boolean;
+        isFinalRouteChunk?: boolean;
+        plannedRouteProgress?: ProgressEvent;
+        onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;
       };
     }>;
   }>;
@@ -28,13 +46,54 @@ type Routes = {
   alternativeRoutes: Route[];
 };
 
+export type Marker = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  title?: string;
+  description?: string;
+  iconName?: string;
+  /**
+   * Color of the marker in hex format (e.g., "#1FBF8F") or rgb format (e.g., "rgb(31, 191, 143)")
+   * Default is red (#FF0000)
+   */
+  color?: string;
+  /**
+   * If true, allows navigating to this marker (shows "Navegar aquí" and uses navigation flow).
+   * If false, the marker is informational only and navigation to it is not offered.
+   * Default is false when omitted.
+   */
+  canNavigate?: boolean;
+  /**
+   * Letter shown on the marker icon (e.g. "P" for Parada, "S" for Stop).
+   * Use based on app language for authorized stops.
+   */
+  markerLetter?: string;
+};
+
 export type ExpoMapboxNavigationViewRef = {
   recenterMap: () => void;
 };
 
 export type ExpoMapboxNavigationViewProps = {
   ref?: Ref<ExpoMapboxNavigationViewRef>;
-  coordinates: Array<{ latitude: number; longitude: number }>;
+  coordinates: Coordinate[];
+  routeMode?: "calculated" | "planned";
+  reroutingEnabled?: boolean;
+  routeDeviationTolerance?: number;
+  plannedRouteDistance?: number;
+  plannedRouteDuration?: number;
+  onGuidanceStateChanged?: (event: {
+    nativeEvent: { state: GuidanceState; errorMessage?: string };
+  }) => void;
+  /** Internal native bridge props, managed by the wrapper. */
+  plannedRouteCoordinates?: Coordinate[];
+  prefetchCoordinates?: Coordinate[];
+  routeRevision?: string;
+  guidanceEnabled?: boolean;
+  isFinalRouteChunk?: boolean;
+  plannedRouteProgress?: ProgressEvent;
+  onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;
   waypointIndices?: number[];
   useRouteMatchingApi?: boolean;
   locale?: string;
@@ -54,6 +113,23 @@ export type ExpoMapboxNavigationViewProps = {
   placeCustomRasterLayerAbove?: string;
   disableAlternativeRoutes?: boolean;
   followingZoom?: number;
+  /**
+   * Determina si se muestra el botón de cancelar navegación.
+   * Por defecto es true.
+   */
+  showCancelButton?: boolean;
+  /**
+   * Texto a mostrar en la parte inferior sobre o dentro del banner nativo
+   */
+  bottomLegend?: string;
+  /**
+   * Array of custom markers to display on the map during navigation.
+   */
+  markers?: Marker[];
+  /**
+   * Called when a marker is pressed.
+   */
+  onMarkerPress?: (event: { nativeEvent: Marker }) => void;
   onRouteProgressChanged?: (event: { nativeEvent: ProgressEvent }) => void;
   onCancelNavigation?: () => void;
   onWaypointArrival?: (event: {
