@@ -57,8 +57,9 @@ final class PlannedRouteController {
                 if requestKey == self.activeKey { self.failed(error.localizedDescription, self.activeRevision) }
             case .success(let routes):
                 let shape = routes.mainRoute.route.shape?.coordinates ?? []
-                guard PlannedRouteGeometry.matches(coordinates, shape, tolerance: tolerance) else {
-                    if requestKey == self.activeKey { self.failed("La guía de Mapbox no coincide con la ruta planificada", self.activeRevision) }
+                let validation = PlannedRouteGeometry.validate(coordinates, shape, tolerance: tolerance)
+                guard validation.matches else {
+                    if requestKey == self.activeKey { self.failed(validation.message(tolerance: tolerance), self.activeRevision) }
                     return
                 }
                 if self.cache.count >= 3, let old = self.cache.keys.first(where: { $0 != self.activeKey }) { self.cache.removeValue(forKey: old) }

@@ -58,8 +58,9 @@ internal class PlannedRouteController(
                 val routes = result.navigationRoutes.take(1)
                 val encoded = routes.firstOrNull()?.directionsRoute?.geometry()
                 val geometry = encoded?.let { PolylineUtils.decode(it, 6) } ?: emptyList()
-                if (!PlannedRouteGeometry.matches(snapshot, geometry, tolerance)) {
-                    if (snapshot == activePoints) failed("La guía de Mapbox no coincide con la ruta planificada", activeRevision)
+                val validation = PlannedRouteGeometry.validate(snapshot, geometry, tolerance)
+                if (!validation.matches) {
+                    if (snapshot == activePoints) failed(validation.message(tolerance), activeRevision)
                     return
                 }
                 cache[snapshot] = routes
