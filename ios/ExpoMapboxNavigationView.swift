@@ -861,7 +861,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let cancelButton = navigationViewController.navigationView.bottomBannerContainerView.findViews(subclassOf: CancelButton.self)[0]
         cancelButton.addTarget(self, action: #selector(cancelButtonClicked), for: .touchUpInside)
-        
+
         if !showCancelButton {
             cancelButton.isHidden = true
         }
