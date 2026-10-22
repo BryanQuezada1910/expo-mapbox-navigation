@@ -119,6 +119,12 @@ export type ExpoMapboxNavigationViewProps = {
    */
   showCancelButton?: boolean;
   /**
+   * Shows the bottom panel with remaining distance, travel time, ETA and legend.
+   * Applies to calculated and planned routes. Defaults to true.
+   * Hiding the panel also hides its cancel button; progress events still fire.
+   */
+  showTripProgress?: boolean;
+  /**
    * Texto a mostrar en la parte inferior sobre o dentro del banner nativo
    */
   bottomLegend?: string;

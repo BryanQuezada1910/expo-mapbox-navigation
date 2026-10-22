@@ -152,6 +152,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var _forceRecreateNavigationController: Bool = false
     var bottomLegendLabel: UILabel? = nil
     var showCancelButton: Bool = true
+    var showTripProgress: Bool = true
+    var currentBottomLegend: String? = nil
 
     /// Callback for dispatching events back to the ExpoView.
     /// This closure captures the ExpoView weakly, so when the view is
@@ -494,13 +496,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         updateMarkers()
     }
 
-    func setBottomLegend(legend: String?){
-        DispatchQueue.main.async {
-            self.bottomLegendLabel?.text = legend
-            self.bottomLegendLabel?.isHidden = legend == nil || legend!.isEmpty
-        }
-    }
-
     func setShowCancelButton(show: Bool?){
         showCancelButton = show ?? true
     }
@@ -839,7 +834,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
             navigationMapView!.maneuverArrowStrokeColor = .clear
             navigationMapView!.waypointColor = .clear
             navigationMapView!.waypointStrokeColor = .clear
-            navigationViewController.navigationView.bottomBannerContainerView.isHidden = true
             plannedStyleSubscription = navigationMapView!.mapView.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
         }
 
@@ -896,6 +890,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             ])
         }
 
+        updateTripProgressVisibility()
         didMove(toParent: self)
         plannedFallbackMap?.removeFromSuperview()
         plannedFallbackMap = nil

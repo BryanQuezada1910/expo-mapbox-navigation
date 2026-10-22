@@ -93,6 +93,14 @@ After getting location permissions you can render the navigation map as follows 
 
 ## Props
 
+#### `showTripProgress`
+
+Boolean, defaults to `true`. Set `showTripProgress={false}` to hide the bottom
+panel with remaining distance, travel time, ETA and `bottomLegend` on Android
+and iOS, including planned routes. The panel's cancel button is hidden too.
+Route progress events continue to fire, and the prop can be changed at runtime.
+Rebuild the native app after installing this change.
+
 #### `coordinates`
 
 An array of `{latitude: number, longitude: number}` objects. This creates a route passing through all the given coordinates. Requires at least 2 points for start and end destinations.

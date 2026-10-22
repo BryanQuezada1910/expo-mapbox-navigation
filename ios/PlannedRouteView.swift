@@ -4,7 +4,7 @@ import CoreLocation
 import UIKit
 
 extension ExpoMapboxNavigationViewController {
-    func setRouteMode(_ value: String?) { plannedMode = value == "planned"; update() }
+    func setRouteMode(_ value: String?) { plannedMode = value == "planned"; updateTripProgressVisibility(); update() }
     func setReroutingEnabled(_ value: Bool?) { reroutingEnabled = value ?? true; update() }
     func setRouteDeviationTolerance(_ value: Double?) {
         let next = value.flatMap { $0.isFinite && $0 > 0 && $0 <= 50 ? $0 : nil } ?? 25
@@ -57,6 +57,7 @@ extension ExpoMapboxNavigationViewController {
         let distance = (progress["distanceRemaining"] ?? 0) / 1000
         let seconds = progress["durationRemaining"] ?? 0
         plannedProgressLabel?.text = seconds > 0 ? String(format: "%.1f km · %.0f min", distance, seconds / 60) : String(format: "%.1f km", distance)
+        updateTripProgressVisibility()
         view.bringSubviewToFront(plannedProgressLabel!)
     }
     func drawPlannedRoute() {

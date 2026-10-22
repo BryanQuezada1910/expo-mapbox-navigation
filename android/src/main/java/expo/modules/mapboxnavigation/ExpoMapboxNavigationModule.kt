@@ -138,6 +138,10 @@ class ExpoMapboxNavigationModule : Module() {
         view.setBottomLegend(text)
       }
 
+      Prop("showTripProgress") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowTripProgress(show)
+      }
+
       Prop("showCancelButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
         view.setShowCancelButton(show)
       }

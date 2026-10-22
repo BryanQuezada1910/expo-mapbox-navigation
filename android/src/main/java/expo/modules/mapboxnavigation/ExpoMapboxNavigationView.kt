@@ -1308,12 +1308,24 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
+    private var showTripProgress = true
+    private var showCancelButton = true
+
+    fun setShowTripProgress(show: Boolean?) {
+        showTripProgress = show ?: true
+        updateTripProgressVisibility()
+    }
+
     fun setShowCancelButton(show: Boolean?) {
-        if (show == false) {
-            cancelButton.visibility = View.GONE
-        } else {
-            cancelButton.visibility = View.VISIBLE
-        }
+        showCancelButton = show ?: true
+        updateTripProgressVisibility()
+    }
+
+    private fun updateTripProgressVisibility() {
+        applyTripProgressVisibility(
+            parentConstraintLayout, mapViewId, tripProgressViewId, cancelButtonId,
+            showTripProgress, showCancelButton
+        )
     }
 
     // Parse color from hex (#RRGGBB) or rgb(R, G, B) format
