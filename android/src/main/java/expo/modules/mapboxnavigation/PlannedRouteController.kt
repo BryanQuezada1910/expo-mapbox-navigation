@@ -1,6 +1,7 @@
 package expo.modules.mapboxnavigation
 
 import com.mapbox.geojson.Point
+import com.mapbox.api.directions.v5.DirectionsCriteria
 import com.mapbox.geojson.utils.PolylineUtils
 import com.mapbox.navigation.base.route.NavigationRoute
 import com.mapbox.navigation.core.MapboxNavigation
@@ -42,6 +43,7 @@ internal class PlannedRouteController(
         val options = MapMatchingOptions.Builder().coordinates(snapshot)
             .waypoints(listOf(0, snapshot.lastIndex)).profile("driving")
             .radiuses(snapshot.map { minOf(50.0, tolerance) })
+            .annotations(listOf(DirectionsCriteria.ANNOTATION_MAXSPEED))
             .bannerInstructions(true).voiceInstructions(true).language(language).build()
         val id = navigation()?.requestMapMatching(options, object : MapMatchingAPICallback {
             override fun onCancel() { if (requestGeneration == generation) { pending.remove(snapshot); requests.remove(snapshot) } }

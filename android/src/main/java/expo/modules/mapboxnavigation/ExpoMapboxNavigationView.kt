@@ -78,11 +78,6 @@ import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateFormatter
 import com.mapbox.navigation.tripdata.progress.model.TripProgressUpdateValue
 import com.mapbox.navigation.tripdata.speedlimit.api.MapboxSpeedInfoApi
 import com.mapbox.navigation.ui.base.util.MapboxNavigationConsumer
-import com.mapbox.navigation.ui.components.maneuver.model.ManeuverPrimaryOptions
-import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
-import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
-import android.graphics.drawable.GradientDrawable
-import android.widget.FrameLayout
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRecenterButton
 import com.mapbox.navigation.ui.components.maps.camera.view.MapboxRouteOverviewButton
 import com.mapbox.navigation.ui.components.voice.view.MapboxSoundButton
@@ -134,6 +129,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var installedRouteRevision = ""
     private var installedRouteGeometry: String? = null
     private var guidanceEnabled = false
+    private var guidanceStatus = "preparing"
+    private var latestRouteProgress: RouteProgress? = null
     private var finalRouteChunk = true
     private var suppressPlannedInstruction = false
     private var plannedCoordinates = emptyList<Point>()
@@ -219,7 +216,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             }
 
     private val maneuverViewId = 2
-    private val maneuverView = createManueverView(maneuverViewId, parentConstraintLayout)
+    private val maneuverView = NavigationGuidanceView(context).apply {
+        id = maneuverViewId
+        parentConstraintLayout.addView(this)
+    }
 
     private val tripProgressViewId = 3
     private val tripProgressTimeRemainingTextView = createCenteredTextView().apply {
@@ -274,8 +274,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             }
 
     private val speedLimitViewId = 8
-    private val speedLimitTextView = TextView(context)
-    private val speedLimitContainer = createSpeedLimitView(speedLimitViewId, parentConstraintLayout, speedLimitTextView)
+    private val speedLimitContainer = SpeedLimitIndicatorView(context).apply {
+        id = speedLimitViewId
+        parentConstraintLayout.addView(this)
+    }
     private val speedInfoApi = MapboxSpeedInfoApi()
 
     private val parentConstraintSet =
@@ -370,7 +372,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         @RouterOrigin routerOrigin: String
                 ) {}
                 override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
-                    if (isAttachedToWindow && !plannedMode) onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: "No se pudo cargar la ruta")))
+                    if (isAttachedToWindow && !plannedMode) {
+                        maneuverView.showStatus("Indicaciones no disponibles")
+                        onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: "No se pudo cargar la ruta")))
+                    }
                 }
             }
 
@@ -456,10 +461,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeProgressObserver =
             object : RouteProgressObserver {
                 override fun onRouteProgressChanged(routeProgress: RouteProgress) {
-                    val arrival = routeProgress.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type() == "arrive" || routeProgress.currentLegProgress?.upcomingStep?.maneuver()?.type() == "arrive"
-                    suppressPlannedInstruction = plannedMode && (!guidanceEnabled || (!finalRouteChunk && arrival))
-                    if (suppressPlannedInstruction) { maneuverView.visibility = View.INVISIBLE; return }
-                    maneuverView.visibility = View.VISIBLE
+                    if (plannedMode && (installedRouteRevision != routeRevision || routeProgress.navigationRoute.directionsRoute.geometry() != installedRouteGeometry)) return
+                    latestRouteProgress = routeProgress
+                    refreshInstructions()
                     // Handle viewport data source
                     viewportDataSource.onRouteProgressChanged(routeProgress)
                     viewportDataSource.evaluate()
@@ -474,10 +478,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     if (!plannedMode && updatedManeuverArrow != null) mapboxStyle?.let {
                         routeArrowView.renderManeuverUpdate(it, updatedManeuverArrow)
                     }
-
-                    // Handle manuevers
-                    val maneuvers = maneuverApi.getManeuvers(routeProgress)
-                    maneuverView.renderManeuvers(maneuvers)
 
                     // Handle trip progress view
                     if (!plannedMode) tripProgressApi.getTripProgress(routeProgress).let {
@@ -508,6 +508,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 override fun onNewLocationMatcherResult(
                         locationMatcherResult: LocationMatcherResult
                 ) {
+                    // Speed metadata describes the current road, independently of route guidance.
+                    updateSpeedLimit(locationMatcherResult)
                     if (plannedMode) return
                     // Update puck location with enhanced (map-matched) location
                     val enhancedLocation = locationMatcherResult.enhancedLocation
@@ -520,29 +522,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     viewportDataSource.onLocationChanged(enhancedLocation)
                     viewportDataSource.evaluate()
 
-                    // Update speed limit display
-                    try {
-                        val lat = enhancedLocation.latitude
-                        val lon = enhancedLocation.longitude
-                        val inUS = isUS(lat, lon)
-                        val speedLimitFormatter = if (inUS) imperialDistanceFormatter else metricDistanceFormatter
-
-                        val speedInfo = speedInfoApi.updatePostedAndCurrentSpeed(
-                                locationMatcherResult,
-                                speedLimitFormatter
-                        )
-                        if (speedInfo != null && speedInfo.postedSpeed != null) {
-                            val unitStr = if (inUS) "mph" else "km/h"
-                            speedLimitTextView.text = "${speedInfo.postedSpeed}\n$unitStr"
-                            // reduce text size slightly when unit is included to ensure it fits the circle
-                            speedLimitTextView.textSize = 16f
-                            speedLimitContainer.visibility = View.VISIBLE
-                        } else {
-                            speedLimitContainer.visibility = View.GONE
-                        }
-                    } catch (e: Exception) {
-                        speedLimitContainer.visibility = View.GONE
-                    }
                 }
                 override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
                     if (plannedMode) onPlannedRouteLocation(mapOf("latitude" to rawLocation.latitude, "longitude" to rawLocation.longitude))
@@ -619,22 +598,34 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
-    private fun createManueverView(id: Int, parent: ViewGroup): MapboxManeuverView {
-        return MapboxManeuverView(context).apply {
-            setId(id)
-            parent.addView(this)
-
-            val maneuverViewOptions =
-                    ManeuverViewOptions.Builder()
-                            .primaryManeuverOptions(
-                                    ManeuverPrimaryOptions.Builder()
-                                            .textAppearance(R.style.ManeuverTextAppearance)
-                                            .build()
-                            )
-                            .build()
-
-            updateManeuverViewOptions(maneuverViewOptions)
+    private fun refreshInstructions() {
+        val progress = latestRouteProgress
+        // Only suppress the instruction being displayed, not an upcoming step's arrival.
+        val instructionType = progress?.bannerInstructions?.primary()?.type()
+            ?: progress?.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type()
+        val enabled = guidanceEnabled && installedRouteRevision == routeRevision
+        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, finalRouteChunk, instructionType) else null
+        suppressPlannedInstruction = plannedMode && (!enabled || (!finalRouteChunk && instructionType == "arrive"))
+        if (suppressPlannedInstruction) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
+        when {
+            status != null -> maneuverView.showStatus(status)
+            progress == null -> maneuverView.showStatus("Preparando indicaciones")
+            else -> maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode)
         }
+    }
+
+    private fun updateSpeedLimit(result: LocationMatcherResult) {
+        val location = result.enhancedLocation
+        val inUS = isUS(location.latitude, location.longitude)
+        val unit = if (inUS) "mph" else "km/h"
+        val presentation = try {
+            val info = speedInfoApi.updatePostedAndCurrentSpeed(result, if (inUS) imperialDistanceFormatter else metricDistanceFormatter)
+            SpeedLimitPresentation.from(info?.postedSpeed?.toDouble(), unit)
+        } catch (error: Exception) {
+            android.util.Log.w("Mapbox", "Could not update speed limit", error)
+            SpeedLimitPresentation.from(null, unit, failed = true)
+        }
+        speedLimitContainer.render(presentation)
     }
 
     private fun createCenteredTextView(): TextView {
@@ -754,40 +745,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
-    private fun createSpeedLimitView(id: Int, parent: ViewGroup, textView: TextView): FrameLayout {
-        val size = (64 * PIXEL_DENSITY).toInt()
-        val container = FrameLayout(context).apply {
-            setId(id)
-
-            // Circle background with red border (Vienna convention style)
-            val circleDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.WHITE)
-                setStroke((3 * PIXEL_DENSITY).toInt(), Color.RED)
-            }
-            background = circleDrawable
-            elevation = 10f * PIXEL_DENSITY
-            visibility = View.GONE
-        }
-
-        // Speed limit text
-        textView.apply {
-            setTextColor(Color.BLACK)
-            textSize = 20f
-            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-        }
-
-        container.addView(textView, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-        ))
-
-        val lp = ConstraintLayout.LayoutParams(size, size)
-        parent.addView(container, lp)
-        return container
-    }
-
     private fun createAndApplyConstraintSet(
             mapViewId: Int,
             maneuverViewId: Int,
@@ -829,6 +786,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     (4 * PIXEL_DENSITY).toInt()
             )
             constrainHeight(maneuverViewId, ConstraintSet.WRAP_CONTENT)
+            constrainWidth(maneuverViewId, ConstraintSet.MATCH_CONSTRAINT)
 
             // Add TripProgressView constraints
             connect(
@@ -1073,7 +1031,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-    fun setRouteMode(value: String?) { plannedMode = value == "planned"; update() }
+    fun setRouteMode(value: String?) { plannedMode = value == "planned"; refreshInstructions(); update() }
     fun setReroutingEnabled(value: Boolean?) { reroutingEnabled = value ?: true; update() }
     fun setRouteDeviationTolerance(value: Double?) {
         val next = value?.takeIf { it.isFinite() && it > 0 && it <= 50 } ?: 25.0
@@ -1081,13 +1039,18 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         routeDeviationTolerance = next
         update()
     }
-    fun setRouteRevision(value: String?) { routeRevision = value ?: ""; update() }
+    fun setRouteRevision(value: String?) {
+        if (routeRevision != (value ?: "")) latestRouteProgress = null
+        routeRevision = value ?: ""
+        refreshInstructions()
+        update()
+    }
     fun setPrefetchCoordinates(value: List<Point>) { prefetchCoordinates = value; update() }
-    fun setFinalRouteChunk(value: Boolean?) { finalRouteChunk = value ?: true }
+    fun setFinalRouteChunk(value: Boolean?) { finalRouteChunk = value ?: true; refreshInstructions() }
+    fun setGuidanceStatus(value: String?) { guidanceStatus = value ?: "preparing"; refreshInstructions() }
     fun setGuidanceEnabled(value: Boolean?) {
         guidanceEnabled = value ?: false
-        if (plannedMode && !guidanceEnabled) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
-        maneuverView.visibility = if (plannedMode && !guidanceEnabled) View.INVISIBLE else View.VISIBLE
+        refreshInstructions()
     }
     fun setPlannedRouteCoordinates(value: List<Point>) {
         if (plannedCoordinates != value) plannedController.reset()

@@ -112,6 +112,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var routeDeviationTolerance = 25.0
     var routeRevision = ""
     var guidanceEnabled = false
+    var guidanceStatus = "preparing"
+    var installedRouteRevision = ""
+    var installedGuidanceRoute: Route?
+    var latestGuidanceProgress: RouteProgress?
+    let guidanceStatusBanner = NavigationStatusBannerView()
+    let speedLimitIndicator = SpeedLimitIndicatorView()
+    var speedLimitTopConstraint: NSLayoutConstraint?
     var finalRouteChunk = true
     var plannedCoordinates: [CLLocationCoordinate2D] = []
     var prefetchCoordinates: [CLLocationCoordinate2D] = []
@@ -119,7 +126,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var guidanceWasSuppressed = true
     var plannedFallbackMap: MapView?
     var plannedProgressLabel: UILabel?
-    var plannedLocationSubscription: AnyCancellable?
+    var locationMatchingSubscription: AnyCancellable?
     var plannedStyleSubscription: AnyCancelable?
     lazy var plannedController = PlannedRouteController(
         provider: { [weak self] in self?.routingProvider },
@@ -175,8 +182,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
         tripSession = mapboxNavigation!.tripSession()
-        plannedLocationSubscription = navigation!.locationMatching.sink { [weak self] state in
-            guard let self = self, self.plannedMode else { return }
+        locationMatchingSubscription = navigation!.locationMatching.sink { [weak self] state in
+            guard let self = self else { return }
+            self.updateSpeedLimit(state)
+            guard self.plannedMode else { return }
             let coordinate = state.location.coordinate
             self.onEvent?("onPlannedRouteLocation", ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
             if let map = self.plannedFallbackMap {
@@ -214,45 +223,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 )
 
                 }
-                if self.plannedMode { self.navigationViewController?.navigationMapView?.removeRoutes(); self.refreshPlannedInstructions(); self.drawPlannedRoute() }
-                // Add Speed Limit Label Logic
-                DispatchQueue.main.async {
-                    if let speedLimitView = self.navigationViewController?.view.findViews(subclassOf: SpeedLimitView.self).first,
-                       let parentView = self.navigationViewController?.view {
-                        var unitLabel = parentView.viewWithTag(999) as? UILabel
-                        if unitLabel == nil {
-                            unitLabel = UILabel()
-                            unitLabel!.tag = 999
-                            unitLabel!.font = UIFont.systemFont(ofSize: 12, weight: .bold)
-                            unitLabel!.backgroundColor = UIColor.white.withAlphaComponent(0.9)
-                            unitLabel!.layer.cornerRadius = 4
-                            unitLabel!.clipsToBounds = true
-                            unitLabel!.textColor = .black
-                            unitLabel!.textAlignment = .center
-                            unitLabel!.translatesAutoresizingMaskIntoConstraints = false
-
-                            parentView.addSubview(unitLabel!)
-
-                            NSLayoutConstraint.activate([
-                                unitLabel!.centerXAnchor.constraint(equalTo: speedLimitView.centerXAnchor),
-                                unitLabel!.topAnchor.constraint(equalTo: speedLimitView.bottomAnchor, constant: 2),
-                                unitLabel!.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
-                                unitLabel!.heightAnchor.constraint(equalToConstant: 16)
-                            ])
-                        }
-
-                        if speedLimitView.speedLimit != nil && !speedLimitView.isHidden && speedLimitView.alpha > 0 {
-                            if let location = self.navigationViewController?.navigationMapView?.mapView.location.latestLocation?.coordinate {
-                                let inUS = self.isUS(lat: location.latitude, lon: location.longitude)
-                                unitLabel!.text = inUS ? "mph" : "km/h"
-                            }
-                            unitLabel!.isHidden = false
-                        } else {
-                            unitLabel!.isHidden = true
-                        }
+                if self.plannedMode {
+                    if progressState?.routeProgress.route == self.installedGuidanceRoute && self.installedRouteRevision == self.routeRevision {
+                        self.latestGuidanceProgress = progressState?.routeProgress
                     }
+                    self.navigationViewController?.navigationMapView?.removeRoutes()
+                    self.refreshPlannedInstructions()
+                    self.drawPlannedRoute()
                 }
-
                self.onEvent?("onRouteProgressChanged", [
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
@@ -296,7 +274,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func stopPlannedRoute() {
         plannedController.reset()
-        plannedLocationSubscription?.cancel()
+        locationMatchingSubscription?.cancel()
         plannedStyleSubscription?.cancel()
         calculateRoutesTask?.cancel()
         updateDebounceTimer?.invalidate()
@@ -313,11 +291,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
         waypointArrivalCancellable?.cancel()
         reroutingCancellable?.cancel()
         sessionCancellable?.cancel()
-        plannedLocationSubscription?.cancel()
+        locationMatchingSubscription?.cancel()
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        installNavigationIndicators()
         Task { @MainActor in self.tripSession?.startFreeDrive() }
     }
 
@@ -773,6 +752,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func onRoutesCalculated(navigationRoutes: NavigationRoutes){
+        if plannedMode {
+            installedRouteRevision = routeRevision
+            installedGuidanceRoute = navigationRoutes.mainRoute.route
+            latestGuidanceProgress = nil
+        }
         onEvent?("onRoutesLoaded", [
             "routeRevision": routeRevision,
             "routes": [
@@ -894,6 +878,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         didMove(toParent: self)
         plannedFallbackMap?.removeFromSuperview()
         plannedFallbackMap = nil
+        installNavigationIndicators()
         refreshPlannedInstructions()
         drawPlannedRoute()
         if let label = plannedProgressLabel { view.bringSubviewToFront(label) }

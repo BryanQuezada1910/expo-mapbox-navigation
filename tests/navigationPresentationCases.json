@@ -1,0 +1,21 @@
+{
+  "guidance": [
+    { "name": "preparing", "status": "preparing", "enabled": false, "finalChunk": false, "instructionType": null, "message": "Preparando indicaciones" },
+    { "name": "no matching route", "status": "unavailable", "enabled": false, "finalChunk": false, "instructionType": null, "message": "Indicaciones no disponibles" },
+    { "name": "off route", "status": "off-route", "enabled": false, "finalChunk": false, "instructionType": "turn", "message": "Fuera de la ruta planificada" },
+    { "name": "valid turn before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "turn", "message": null },
+    { "name": "depart before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "depart", "message": null },
+    { "name": "artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "arrive", "message": "Continuando ruta planificada" },
+    { "name": "real final arrival", "status": "available", "enabled": true, "finalChunk": true, "instructionType": "arrive", "message": null },
+    { "name": "old revision cannot show a turn", "status": "available", "enabled": false, "finalChunk": true, "instructionType": "turn", "message": "Preparando indicaciones" }
+  ],
+  "speedLimits": [
+    { "name": "metric", "speed": 80, "unit": "km/h", "failed": false, "text": "80\nkm/h", "available": true },
+    { "name": "imperial", "speed": 55, "unit": "mph", "failed": false, "text": "55\nmph", "available": true },
+    { "name": "converted", "speed": 49.7097, "unit": "mph", "failed": false, "text": "50\nmph", "available": true },
+    { "name": "no road data", "speed": null, "unit": "km/h", "failed": false, "text": "Sin\ndatos", "available": false },
+    { "name": "zero is not a speed limit", "speed": 0, "unit": "km/h", "failed": false, "text": "Sin\ndatos", "available": false },
+    { "name": "invalid negative", "speed": -1, "unit": "mph", "failed": false, "text": "Sin\ndatos", "available": false },
+    { "name": "failed update clears old speed", "speed": 80, "unit": "km/h", "failed": true, "text": "Error de\ndatos", "available": false }
+  ]
+}

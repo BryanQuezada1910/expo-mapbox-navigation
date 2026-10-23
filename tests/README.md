@@ -43,3 +43,21 @@ xcrun swiftc ios/PlannedRouteGeometry.swift tests/plannedRouteGeometry.test.swif
 
 Both platforms must pass all shared fixtures. Device verification of real route
 responses, location, and voice remains separate from these deterministic tests.
+
+## Navigation indicator regression tests
+
+`navigationPresentationCases.json` is shared by Kotlin and Swift. It covers
+preparing/unavailable/off-route instructions, turns before an artificial arrival,
+intermediate versus final arrivals, numeric limits, missing limits and errors.
+Both harnesses also reject nonfinite speed values. The JavaScript suite above
+checks the bridge status through route loads, window changes, failures, retries,
+departure and rejoining without another route request.
+
+```sh
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationPresentation.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-presentation-tests.jar
+java -cp "/tmp/navigation-presentation-tests.jar:$GSON_JAR" expo.modules.mapboxnavigation.NavigationPresentation_testKt tests/navigationPresentationCases.json
+xcrun swiftc ios/NavigationPresentation.swift tests/navigationPresentation.test.swift -o /tmp/navigation-presentation-tests
+/tmp/navigation-presentation-tests tests/navigationPresentationCases.json
+```
+
+See `docs/navigation-indicators.md` for behavior and device verification cases.

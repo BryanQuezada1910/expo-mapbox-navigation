@@ -4,6 +4,7 @@ import { Ref } from "react";
 
 export type Coordinate = { latitude: number; longitude: number };
 export type GuidanceState = "preparing" | "available" | "unavailable";
+export type PlannedGuidanceStatus = GuidanceState | "off-route";
 export type ProgressEvent = {
   distanceRemaining: number;
   distanceTraveled: number;
@@ -91,6 +92,7 @@ export type ExpoMapboxNavigationViewProps = {
   prefetchCoordinates?: Coordinate[];
   routeRevision?: string;
   guidanceEnabled?: boolean;
+  guidanceStatus?: PlannedGuidanceStatus;
   isFinalRouteChunk?: boolean;
   plannedRouteProgress?: ProgressEvent;
   onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;

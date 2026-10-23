@@ -17,7 +17,9 @@ import {
 
 const EMPTY_COORDINATES: Coordinate[] = [];
 
-export function usePlannedRoute(props: ExpoMapboxNavigationViewProps) {
+export function usePlannedRoute(
+  props: ExpoMapboxNavigationViewProps
+): ExpoMapboxNavigationViewProps {
   const planned = props.routeMode === "planned";
   const valid =
     props.coordinates.length >= 2 && props.coordinates.every(isValidCoordinate);
@@ -184,6 +186,14 @@ export function usePlannedRoute(props: ExpoMapboxNavigationViewProps) {
     prefetchCoordinates: chunks[active + 1]?.coordinates || EMPTY_COORDINATES,
     routeRevision: revision,
     guidanceEnabled: onRoute && readyRevision === revision,
+    guidanceStatus:
+      !valid || state === "unavailable"
+        ? "unavailable"
+        : readyRevision !== revision
+          ? "preparing"
+          : onRoute
+            ? "available"
+            : "off-route",
     isFinalRouteChunk: active === chunks.length - 1,
     plannedRouteProgress: progress,
     waypointIndices,

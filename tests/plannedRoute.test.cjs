@@ -123,6 +123,7 @@ test('guidance follows original windows without replacing full geometry', () => 
   const coordinates = points(201), harness = setupHook(coordinates);
   let view = harness.render();
   const firstRevision = view.routeRevision;
+  assert.equal(view.guidanceStatus, 'preparing');
   assert.equal(view.plannedRouteCoordinates, coordinates);
   assert.equal(view.coordinates.length, 100);
   view.onPlannedRouteLocation({ nativeEvent: coordinates[0] });
@@ -130,13 +131,16 @@ test('guidance follows original windows without replacing full geometry', () => 
   view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
   view = harness.render();
   assert.equal(view.guidanceEnabled, true);
+  assert.equal(view.guidanceStatus, 'available');
   view.onPlannedRouteLocation({ nativeEvent: { latitude: 20, longitude: -100 } });
   view = harness.render();
   assert.equal(view.guidanceEnabled, false);
+  assert.equal(view.guidanceStatus, 'off-route');
   assert.equal(view.plannedRouteCoordinates, coordinates);
   view.onPlannedRouteLocation({ nativeEvent: coordinates[90] });
   view = harness.render();
   assert.equal(view.coordinates[0], coordinates[80]);
+  assert.equal(view.guidanceStatus, 'preparing');
   assert.equal(view.guidanceEnabled, false);
   assert.equal(view.onFinalDestinationArrival, undefined);
   view.onRoutesLoaded({ nativeEvent: { routeRevision: firstRevision, routes: {} } });
@@ -145,6 +149,7 @@ test('guidance follows original windows without replacing full geometry', () => 
   view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
   view = harness.render();
   assert.equal(view.guidanceEnabled, true);
+  assert.equal(view.guidanceStatus, 'available');
   assert.ok(view.plannedRouteProgress.fractionTraveled > 0.4);
   assert.equal(view.reroutingEnabled, false);
   assert.equal(view.useRouteMatchingApi, true);
@@ -157,10 +162,32 @@ test('a matching failure preserves drawing and retries the same original block',
   view = harness.render();
   assert.equal(view.guidanceEnabled, false);
   assert.equal(view.plannedRouteCoordinates.length, 1001);
+  assert.equal(view.guidanceStatus, 'unavailable');
   assert.ok(harness.events.includes('unavailable'));
   assert.equal(harness.timers.size, 1);
   [...harness.timers.values()][0]();
   view = harness.render();
   assert.notEqual(view.routeRevision, revision);
   assert.equal(view.coordinates, block);
+  assert.equal(view.guidanceStatus, 'preparing');
+});
+
+test('rejoining restores available instructions without requesting another route', () => {
+  const coordinates = points(101), harness = setupHook(coordinates);
+  let view = harness.render();
+  const revision = view.routeRevision;
+  view.onRoutesLoaded({ nativeEvent: { routeRevision: revision, routes: {} } });
+  view = harness.render();
+  assert.equal(view.guidanceStatus, 'off-route');
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[30] });
+  view = harness.render();
+  assert.equal(view.guidanceStatus, 'available');
+  view.onPlannedRouteLocation({ nativeEvent: { latitude: 20, longitude: -100 } });
+  view = harness.render();
+  assert.equal(view.guidanceStatus, 'off-route');
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[40] });
+  view = harness.render();
+  assert.equal(view.guidanceStatus, 'available');
+  assert.equal(view.routeRevision, revision);
+  assert.equal(view.guidanceEnabled, true);
 });

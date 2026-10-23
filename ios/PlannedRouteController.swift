@@ -47,6 +47,10 @@ final class PlannedRouteController {
         let options = NavigationMatchOptions(waypoints: waypoints, profileIdentifier: .automobile,
             queryItems: [URLQueryItem(name: "radiuses", value: coordinates.map { _ in String(min(50, tolerance)) }.joined(separator: ";"))])
         options.locale = locale
+        options.includesSteps = true
+        options.includesVisualInstructions = true
+        options.includesSpokenInstructions = true
+        options.attributeOptions.insert(.maximumSpeedLimit)
         let requestGeneration = generation
         tasks[requestKey] = Task { [weak self] in
             let result = await provider.calculateRoutes(options: options).result

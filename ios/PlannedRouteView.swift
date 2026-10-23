@@ -4,7 +4,17 @@ import CoreLocation
 import UIKit
 
 extension ExpoMapboxNavigationViewController {
-    func setRouteMode(_ value: String?) { plannedMode = value == "planned"; updateTripProgressVisibility(); update() }
+    func setRouteMode(_ value: String?) {
+        let wasPlanned = plannedMode
+        plannedMode = value == "planned"
+        if wasPlanned && !plannedMode {
+            ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = requestedMute
+            guidanceWasSuppressed = false
+        }
+        refreshPlannedInstructions()
+        updateTripProgressVisibility()
+        update()
+    }
     func setReroutingEnabled(_ value: Bool?) { reroutingEnabled = value ?? true; update() }
     func setRouteDeviationTolerance(_ value: Double?) {
         let next = value.flatMap { $0.isFinite && $0 > 0 && $0 <= 50 ? $0 : nil } ?? 25
@@ -12,24 +22,18 @@ extension ExpoMapboxNavigationViewController {
         routeDeviationTolerance = next
         update()
     }
-    func setRouteRevision(_ value: String?) { routeRevision = value ?? ""; update() }
+    func setRouteRevision(_ value: String?) {
+        if routeRevision != (value ?? "") { latestGuidanceProgress = nil }
+        routeRevision = value ?? ""
+        refreshPlannedInstructions()
+        update()
+    }
     func setPrefetchCoordinates(_ value: [CLLocationCoordinate2D]) { prefetchCoordinates = value; update() }
-    func setFinalRouteChunk(_ value: Bool?) { finalRouteChunk = value ?? true }
+    func setFinalRouteChunk(_ value: Bool?) { finalRouteChunk = value ?? true; refreshPlannedInstructions() }
+    func setGuidanceStatus(_ value: String?) { guidanceStatus = value ?? "preparing"; refreshPlannedInstructions() }
     func setGuidanceEnabled(_ value: Bool?) {
         guidanceEnabled = value ?? false
         refreshPlannedInstructions()
-    }
-    func refreshPlannedInstructions() {
-        guard plannedMode else { return }
-        let progress = navigation?.currentRouteProgress?.routeProgress
-        let arriving = progress?.currentLegProgress.currentStep.maneuverType == .arrive || progress?.currentLegProgress.upcomingStep?.maneuverType == .arrive
-        let suppressed = !guidanceEnabled || (!finalRouteChunk && arriving)
-        let synthesizer = ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer
-        if !guidanceWasSuppressed { requestedMute = synthesizer.muted }
-        if suppressed { synthesizer.stopSpeaking() }
-        synthesizer.muted = requestedMute || suppressed
-        guidanceWasSuppressed = suppressed
-        navigationViewController?.navigationView.topBannerContainerView.isHidden = suppressed
     }
     func setPlannedRouteCoordinates(_ coordinates: [CLLocationCoordinate2D]) {
         let unchanged = plannedCoordinates.count == coordinates.count && zip(plannedCoordinates, coordinates).allSatisfy { pair in pair.0.latitude == pair.1.latitude && pair.0.longitude == pair.1.longitude }
@@ -77,6 +81,7 @@ extension ExpoMapboxNavigationViewController {
         plannedStyleSubscription = map.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
         if let location = initialLocation { map.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: initialLocationZoom ?? 15)) }
         tripSession?.startFreeDrive()
+        refreshPlannedInstructions()
         drawPlannedRoute()
     }
     func applyRoutingPolicy() {
