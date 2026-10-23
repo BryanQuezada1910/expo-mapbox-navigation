@@ -84,6 +84,9 @@ export type ExpoMapboxNavigationViewProps = {
   routeDeviationTolerance?: number;
   plannedRouteDistance?: number;
   plannedRouteDuration?: number;
+  /** Presentation availability, including continuation/off-route instructions.
+   * Matching failures can still include errorMessage while guidance is available.
+   */
   onGuidanceStateChanged?: (event: {
     nativeEvent: { state: GuidanceState; errorMessage?: string };
   }) => void;
@@ -93,6 +96,7 @@ export type ExpoMapboxNavigationViewProps = {
   routeRevision?: string;
   guidanceEnabled?: boolean;
   guidanceStatus?: PlannedGuidanceStatus;
+  isOnPlannedRoute?: boolean;
   isFinalRouteChunk?: boolean;
   plannedRouteProgress?: ProgressEvent;
   onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;

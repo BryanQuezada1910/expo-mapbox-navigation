@@ -124,6 +124,7 @@ test('guidance follows original windows without replacing full geometry', () => 
   let view = harness.render();
   const firstRevision = view.routeRevision;
   assert.equal(view.guidanceStatus, 'preparing');
+  assert.equal(view.isOnPlannedRoute, undefined);
   assert.equal(view.plannedRouteCoordinates, coordinates);
   assert.equal(view.coordinates.length, 100);
   view.onPlannedRouteLocation({ nativeEvent: coordinates[0] });
@@ -131,15 +132,18 @@ test('guidance follows original windows without replacing full geometry', () => 
   view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
   view = harness.render();
   assert.equal(view.guidanceEnabled, true);
+  assert.equal(view.isOnPlannedRoute, true);
   assert.equal(view.guidanceStatus, 'available');
   view.onPlannedRouteLocation({ nativeEvent: { latitude: 20, longitude: -100 } });
   view = harness.render();
   assert.equal(view.guidanceEnabled, false);
   assert.equal(view.guidanceStatus, 'off-route');
+  assert.equal(view.isOnPlannedRoute, false);
   assert.equal(view.plannedRouteCoordinates, coordinates);
   view.onPlannedRouteLocation({ nativeEvent: coordinates[90] });
   view = harness.render();
   assert.equal(view.coordinates[0], coordinates[80]);
+  assert.equal(view.isOnPlannedRoute, true);
   assert.equal(view.guidanceStatus, 'preparing');
   assert.equal(view.guidanceEnabled, false);
   assert.equal(view.onFinalDestinationArrival, undefined);
@@ -153,6 +157,32 @@ test('guidance follows original windows without replacing full geometry', () => 
   assert.ok(view.plannedRouteProgress.fractionTraveled > 0.4);
   assert.equal(view.reroutingEnabled, false);
   assert.equal(view.useRouteMatchingApi, true);
+});
+
+test('on-route instructions remain present while changing windows and retrying', () => {
+  const coordinates = points(201), harness = setupHook(coordinates);
+  let view = harness.render();
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[10] });
+  view = harness.render();
+  assert.equal(view.isOnPlannedRoute, true);
+  assert.equal(harness.events.at(-1), 'available');
+  view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
+  view = harness.render();
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[90] });
+  view = harness.render();
+  assert.equal(view.guidanceEnabled, false);
+  assert.equal(view.isOnPlannedRoute, true);
+  assert.equal(harness.events.at(-1), 'available', 'a matching-window change must not cover native continuation guidance with a loading overlay');
+  view.onRouteFailedToLoad({ nativeEvent: { routeRevision: view.routeRevision, errorMessage: 'NoMatch' } });
+  view = harness.render();
+  assert.equal(view.guidanceStatus, 'unavailable');
+  assert.equal(view.isOnPlannedRoute, true);
+  assert.equal(harness.events.at(-1), 'available');
+  assert.equal(harness.timers.size, 1, 'matching still retries independently of visible guidance');
+  view.onPlannedRouteLocation({ nativeEvent: { latitude: 20, longitude: -100 } });
+  view = harness.render();
+  assert.equal(view.isOnPlannedRoute, false);
+  assert.equal(view.guidanceStatus, 'off-route', 'off-route status takes precedence over a matching failure');
 });
 test('a matching failure preserves drawing and retries the same original block', () => {
   const harness = setupHook(points(1001));

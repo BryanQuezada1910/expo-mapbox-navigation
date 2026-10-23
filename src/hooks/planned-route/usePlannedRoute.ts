@@ -39,6 +39,7 @@ export function usePlannedRoute(
   const [attempt, setAttempt] = useState(0);
   const [readyRevision, setReadyRevision] = useState("");
   const [onRoute, setOnRoute] = useState(false);
+  const [hasRouteLocation, setHasRouteLocation] = useState(false);
   const progressRef = useRef<number | undefined>(undefined);
   const [progress, setProgress] = useState<ProgressEvent>({
     distanceRemaining: 0,
@@ -47,6 +48,7 @@ export function usePlannedRoute(
     fractionTraveled: 0,
   });
   const [state, setState] = useState<GuidanceState>("preparing");
+  const [guidanceError, setGuidanceError] = useState<string | undefined>(undefined);
   const active = Math.min(chunkIndex, Math.max(0, chunks.length - 1));
   const requestedTolerance = props.routeDeviationTolerance;
   const tolerance = requestedTolerance && Number.isFinite(requestedTolerance) && requestedTolerance > 0 && requestedTolerance <= 50 ? requestedTolerance : 25;
@@ -58,17 +60,22 @@ export function usePlannedRoute(
   const notify = useCallback(
     (next: GuidanceState, errorMessage?: string) => {
       setState(next);
-      props.onGuidanceStateChanged?.({
-        nativeEvent: { state: next, errorMessage },
-      });
+      setGuidanceError(errorMessage);
     },
-    [props.onGuidanceStateChanged]
+    []
   );
+  // Once GPS is known, native guidance can show a maneuver, continuation or
+  // off-route instruction even while the next matching window is loading.
+  const presentedState = planned && valid && hasRouteLocation ? "available" : state;
+  useEffect(() => {
+    if (planned) props.onGuidanceStateChanged?.({ nativeEvent: { state: presentedState, errorMessage: guidanceError } });
+  }, [planned, presentedState, guidanceError, props.onGuidanceStateChanged]);
   useEffect(() => {
     setChunkIndex(0);
     setAttempt(0);
     setReadyRevision("");
     setOnRoute(false);
+    setHasRouteLocation(false);
     const total =
       props.plannedRouteDistance || distances[distances.length - 1] || 0;
     setProgress({
@@ -113,6 +120,7 @@ export function usePlannedRoute(
         progressRef.current
       );
       const inside = projection.offset <= tolerance;
+      setHasRouteLocation(true);
       setOnRoute(inside);
       if (!inside) return;
       progressRef.current = projection.distance;
@@ -186,8 +194,11 @@ export function usePlannedRoute(
     prefetchCoordinates: chunks[active + 1]?.coordinates || EMPTY_COORDINATES,
     routeRevision: revision,
     guidanceEnabled: onRoute && readyRevision === revision,
+    isOnPlannedRoute: hasRouteLocation ? onRoute : undefined,
     guidanceStatus:
-      !valid || state === "unavailable"
+      hasRouteLocation && !onRoute
+        ? "off-route"
+        : !valid || state === "unavailable"
         ? "unavailable"
         : readyRevision !== revision
           ? "preparing"

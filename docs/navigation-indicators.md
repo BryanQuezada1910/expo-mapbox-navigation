@@ -11,21 +11,50 @@ The old planned-route policy hid the entire banner when either the current step
 or the upcoming step was an arrival. A window with only a departure and an
 artificial arrival could therefore hide instructions throughout that window.
 The policy now examines the current visual instruction first. A later arrival
-does not hide a valid turn. Only an arrival instruction for an intermediate
-window is suppressed, with “Continuando ruta planificada” shown during the
-transition. The final destination still uses the SDK's arrival instruction.
+does not hide a valid turn. An arrival instruction for an intermediate window is
+replaced by a continuation instruction, such as “Continúa por N Interstate 35”,
+using the current matched road name or the current SDK step's road name. The
+continuation has a forward icon and no artificial arrival distance. If the road
+name is unknown, it says “Continúa por la ruta marcada” without inventing a turn.
+The final destination still uses the SDK's arrival instruction.
 
 The wrapper supplies the internal `guidanceStatus` bridge prop. The native banner
-shows “Preparando indicaciones”, “Indicaciones no disponibles” or “Fuera de la
-ruta planificada” when turn instructions cannot be shown. It restores the current
-instruction on rejoining, without requiring another route request or a new
-instruction event. Empty/error maneuver results also show an explicit status.
+shows “Preparando indicaciones” or “Indicaciones no disponibles” before GPS can
+be classified against the route. The internal `isOnPlannedRoute` prop distinguishes
+unknown GPS from an on-route or off-route location. On route, a continuation stays
+visible while a new matching window loads, retries or has no renderable maneuver.
+Off route, “Fuera de la ruta planificada” takes precedence over loading and errors.
+It restores the current instruction on rejoining, without requiring another route
+request or a new instruction event.
 Android now constrains the banner to the available width and continues updating
 the camera and progress when instructions are suppressed.
 
 The original geometry, deviation validation, route windows, retry policy and
 disabled rerouting remain authoritative. These changes do not synthesize turns
 when Map Matching cannot provide a valid guide.
+
+`onGuidanceStateChanged.state` describes the visible guidance. Once valid GPS
+has been classified against a valid trace, it remains `available` because native
+UI can show a maneuver, continuation or off-route message. Consumers must not
+cover that UI with a loading overlay for internal matching-window changes.
+Matching failures still populate `errorMessage`, and the internal retry state
+continues independently. Before GPS is available, `preparing` and `unavailable`
+retain their previous meaning.
+
+## Overview and following camera
+
+Planned overview frames the complete original trace rather than the current
+100-point matching window or its remaining portion. Android includes the full
+trace as additional overview framing points. iOS wraps the SDK viewport source,
+replacing only its overview target with a camera fitted to the full trace; SDK
+following targets remain intact. The fitted iOS target is cached until the trace,
+viewport dimensions or padding changes.
+
+The overview action is shown only while following. In overview or after a manual
+pan, only the follow action is shown. Android places these actions in the same
+control slot and registers its camera observer once per attachment. iOS uses the
+SDK overview and resume controls, observing the SDK camera state. Internal route
+window replacements preserve overview/manual camera mode on both platforms.
 
 ## Speed limits
 
@@ -53,8 +82,13 @@ and [Map Matching parameters](https://docs.mapbox.com/api/navigation/map-matchin
 
 Use a new native build to check a planned route with a turn inside a window,
 an intermediate window boundary, departure/rejoin, a rejected matching response,
-a road without speed metadata and a road with a known posted limit. Check that
-the displayed path and rerouting policy are preserved. Test with voice muted and
+a road without speed metadata and a road with a known posted limit. On a long
+straight road, confirm the continuation instruction stays visible between windows.
+In overview, confirm the start, finish and intermediate detours of the entire
+trace fit on screen, including after a matching-window change and rotation.
+Check that only one camera action is visible in following, overview and manual
+pan states. Check that the displayed path and rerouting policy are preserved.
+Test with voice muted and
 enabled; intermediate arrivals must not be announced as final destinations.
 
 Deterministic regression commands are documented in `tests/README.md`.

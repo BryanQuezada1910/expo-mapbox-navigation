@@ -49,6 +49,7 @@ class ExpoMapboxNavigationModule : Module() {
       Prop("routeRevision") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteRevision(value) }
       Prop("guidanceEnabled") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setGuidanceEnabled(value) }
       Prop("guidanceStatus") { view: ExpoMapboxNavigationView, value: String? -> view.setGuidanceStatus(value) }
+      Prop("isOnPlannedRoute") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setIsOnPlannedRoute(value) }
       Prop("isFinalRouteChunk") { view: ExpoMapboxNavigationView, value: Boolean? -> view.setFinalRouteChunk(value) }
       Prop("plannedRouteCoordinates") { view: ExpoMapboxNavigationView, value: List<Map<String, Double>>? ->
         view.setPlannedRouteCoordinates(value?.map { Point.fromLngLat(it.getValue("longitude"), it.getValue("latitude")) } ?: emptyList())

@@ -55,27 +55,33 @@ extension ExpoMapboxNavigationViewController {
         let instruction = step?.currentVisualInstruction
         let instructionType = instruction?.primaryInstruction.maneuverType?.rawValue
             ?? progress?.currentLegProgress.currentStep.maneuverType.rawValue
-        let enabled = guidanceEnabled && installedRouteRevision == routeRevision
-        var message = plannedGuidanceMessage(status: guidanceStatus, enabled: enabled, finalChunk: finalRouteChunk, instructionType: instructionType)
-        let suppressed = !enabled || (!finalRouteChunk && instructionType == "arrive")
+        let enabled = guidanceEnabled && installedRouteRevision == routeRevision && isOnPlannedRoute != false
+        let roadName = currentRoadName ?? progress?.currentLegProgress.currentStep.names?.joined(separator: " ")
+        let message = plannedGuidanceMessage(status: guidanceStatus, enabled: enabled, onRoute: isOnPlannedRoute)
+        let suppressed = !enabled || isArtificialArrival(finalChunk: finalRouteChunk, instructionType: instructionType)
         let synthesizer = ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer
         if !guidanceWasSuppressed { requestedMute = synthesizer.muted }
         if suppressed { synthesizer.stopSpeaking() }
         synthesizer.muted = requestedMute || suppressed
         guidanceWasSuppressed = suppressed
 
-        if message == nil {
-            if let instruction = instruction, let step = step,
+        var showsNativeInstruction = false
+        if let message = message {
+            guidanceStatusBanner.show(message)
+        } else {
+            if enabled, !isArtificialArrival(finalChunk: finalRouteChunk, instructionType: instructionType),
+               let instruction = instruction, let step = step,
                let banner = navigationViewController?.view.findViews(subclassOf: InstructionsBannerView.self).first {
                 // Reapply the current instruction when rejoining, even without a new instruction event.
                 banner.update(for: instruction)
                 banner.updateDistance(for: step)
+                showsNativeInstruction = true
+                guidanceStatusBanner.show(nil)
             } else {
-                message = progress == nil ? "Preparando indicaciones" : "Indicaciones no disponibles"
+                guidanceStatusBanner.showContinuation(roadName: roadName)
             }
         }
-        navigationViewController?.navigationView.topBannerContainerView.isHidden = message != nil
-        guidanceStatusBanner.show(message)
+        navigationViewController?.navigationView.topBannerContainerView.isHidden = !showsNativeInstruction
         installNavigationIndicators()
     }
 }

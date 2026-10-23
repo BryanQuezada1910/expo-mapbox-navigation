@@ -8,10 +8,15 @@ fun main(args: Array<String>) {
     for (entry in cases.getAsJsonArray("guidance")) {
         val item = entry.asJsonObject
         val message = plannedGuidanceMessage(
-            item["status"].asString, item["enabled"].asBoolean, item["finalChunk"].asBoolean,
-            item["instructionType"].takeUnless { it.isJsonNull }?.asString
+            item["status"].asString, item["enabled"].asBoolean,
+            item.get("onRoute")?.takeUnless { it.isJsonNull }?.asBoolean
         )
         check(message == item["message"].takeUnless { it.isJsonNull }?.asString) { item["name"].asString }
+        check(isArtificialArrival(item["finalChunk"].asBoolean, item["instructionType"].takeUnless { it.isJsonNull }?.asString) == item["artificialArrival"].asBoolean) { item["name"].asString }
+    }
+    for (entry in cases.getAsJsonArray("continuations")) {
+        val item = entry.asJsonObject
+        check(plannedContinuationInstruction(item["roadName"].takeUnless { it.isJsonNull }?.asString) == item["text"].asString)
     }
     for (entry in cases.getAsJsonArray("speedLimits")) {
         val item = entry.asJsonObject
@@ -23,5 +28,5 @@ fun main(args: Array<String>) {
     }
     check(!SpeedLimitPresentation.from(Double.NaN, "km/h").available)
     check(!SpeedLimitPresentation.from(Double.POSITIVE_INFINITY, "km/h").available)
-    println("15 navigation presentation cases and nonfinite speed values passed")
+    println("23 navigation presentation cases and nonfinite speed values passed")
 }

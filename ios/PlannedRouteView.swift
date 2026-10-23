@@ -11,6 +11,7 @@ extension ExpoMapboxNavigationViewController {
             ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer.muted = requestedMute
             guidanceWasSuppressed = false
         }
+        cameraController.configureViewport(planned: plannedMode, coordinates: plannedCoordinates)
         refreshPlannedInstructions()
         updateTripProgressVisibility()
         update()
@@ -31,6 +32,7 @@ extension ExpoMapboxNavigationViewController {
     func setPrefetchCoordinates(_ value: [CLLocationCoordinate2D]) { prefetchCoordinates = value; update() }
     func setFinalRouteChunk(_ value: Bool?) { finalRouteChunk = value ?? true; refreshPlannedInstructions() }
     func setGuidanceStatus(_ value: String?) { guidanceStatus = value ?? "preparing"; refreshPlannedInstructions() }
+    func setIsOnPlannedRoute(_ value: Bool?) { isOnPlannedRoute = value; refreshPlannedInstructions() }
     func setGuidanceEnabled(_ value: Bool?) {
         guidanceEnabled = value ?? false
         refreshPlannedInstructions()
@@ -39,6 +41,7 @@ extension ExpoMapboxNavigationViewController {
         let unchanged = plannedCoordinates.count == coordinates.count && zip(plannedCoordinates, coordinates).allSatisfy { pair in pair.0.latitude == pair.1.latitude && pair.0.longitude == pair.1.longitude }
         if !unchanged { plannedController.reset() }
         plannedCoordinates = coordinates
+        cameraController.setCoordinates(coordinates)
         drawPlannedRoute()
     }
     func setPlannedRouteProgress(_ progress: [String: Double]?) {

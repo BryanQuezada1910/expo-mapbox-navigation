@@ -31,25 +31,38 @@ internal class NavigationGuidanceView(context: Context) : FrameLayout(context) {
         minHeight = (64 * resources.displayMetrics.density).toInt()
         visibility = View.GONE
     }
+    private val continuationView = NavigationContinuationView(context).apply { visibility = View.GONE }
 
     init {
         addView(maneuverView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(statusLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        addView(continuationView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         showStatus("Preparando indicaciones")
     }
 
     fun showStatus(message: String) {
+        continuationView.visibility = View.GONE
         maneuverView.visibility = View.GONE
         statusLabel.text = message
         statusLabel.visibility = View.VISIBLE
     }
 
-    fun renderManeuvers(maneuvers: Expected<ManeuverError, List<Maneuver>>, planned: Boolean) {
+    fun showContinuation(roadName: String?) {
+        maneuverView.visibility = View.GONE
+        statusLabel.visibility = View.GONE
+        continuationView.render(roadName)
+        continuationView.visibility = View.VISIBLE
+    }
+
+    fun renderManeuvers(maneuvers: Expected<ManeuverError, List<Maneuver>>, planned: Boolean, roadName: String? = null) {
         maneuvers.fold(
-            { showStatus("Indicaciones no disponibles") },
+            { if (planned) showContinuation(roadName) else showStatus("Indicaciones no disponibles") },
             { values ->
-                if (values.isEmpty()) showStatus("Indicaciones no disponibles")
+                if (values.isEmpty()) {
+                    if (planned) showContinuation(roadName) else showStatus("Indicaciones no disponibles")
+                }
                 else {
+                    continuationView.visibility = View.GONE
                     statusLabel.visibility = View.GONE
                     maneuverView.visibility = View.VISIBLE
                     // The list may include the artificial destination of a planned window.

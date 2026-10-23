@@ -85,8 +85,6 @@ import com.mapbox.navigation.ui.maps.camera.NavigationCamera
 import com.mapbox.navigation.ui.maps.camera.data.FollowingFrameOptions.FocalPoint
 import com.mapbox.navigation.ui.maps.camera.data.MapboxNavigationViewportDataSource
 import com.mapbox.navigation.ui.maps.camera.lifecycle.NavigationBasicGesturesHandler
-import com.mapbox.navigation.ui.maps.camera.state.NavigationCameraState
-import com.mapbox.navigation.ui.maps.camera.transition.NavigationCameraTransitionOptions
 import com.mapbox.navigation.ui.maps.location.NavigationLocationProvider
 import com.mapbox.navigation.ui.maps.route.RouteLayerConstants.TOP_LEVEL_ROUTE_LINE_LAYER_ID
 import com.mapbox.navigation.ui.maps.route.arrow.api.MapboxRouteArrowApi
@@ -130,6 +128,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var installedRouteGeometry: String? = null
     private var guidanceEnabled = false
     private var guidanceStatus = "preparing"
+    private var isOnPlannedRoute: Boolean? = null
+    private var currentRoadName: String? = null
     private var latestRouteProgress: RouteProgress? = null
     private var finalRouteChunk = true
     private var suppressPlannedInstruction = false
@@ -266,6 +266,10 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             createRecenterButton(recenterButtonId, parentConstraintLayout) {
                 navigationCamera.requestNavigationCameraToFollowing()
             }
+
+    private val cameraController by lazy {
+        NavigationCameraController(navigationCamera, viewportDataSource, overviewButton, recenterButton)
+    }
 
     private val cancelButtonId = 7
     private val cancelButton =
@@ -440,20 +444,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     speechApi.cancel()
                     voiceInstructionsPlayer.clear()
 
-                    // Add observer to navigation camera
-                    navigationCamera.registerNavigationCameraStateChangeObserver {
-                            navigationCameraState ->
-                        // shows/hide the recenter button depending on the camera
-                        // state
-                        when (navigationCameraState) {
-                            NavigationCameraState.TRANSITION_TO_FOLLOWING,
-                            NavigationCameraState.FOLLOWING -> recenterButton.visibility = View.GONE
-                            NavigationCameraState.TRANSITION_TO_OVERVIEW,
-                            NavigationCameraState.OVERVIEW,
-                            NavigationCameraState.IDLE -> recenterButton.visibility = View.VISIBLE
-                        }
-                    }
-
                     this@ExpoMapboxNavigationView.onRouteChanged(mapOf())
                 }
             }
@@ -510,6 +500,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 ) {
                     // Speed metadata describes the current road, independently of route guidance.
                     updateSpeedLimit(locationMatcherResult)
+                    currentRoadName = locationMatcherResult.road.components.map { it.text }.filter { it.isNotBlank() }.joinToString(" ").ifBlank { null }
+                    if (plannedMode) refreshInstructions()
                     if (plannedMode) return
                     // Update puck location with enhanced (map-matched) location
                     val enhancedLocation = locationMatcherResult.enhancedLocation
@@ -603,14 +595,16 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         // Only suppress the instruction being displayed, not an upcoming step's arrival.
         val instructionType = progress?.bannerInstructions?.primary()?.type()
             ?: progress?.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type()
-        val enabled = guidanceEnabled && installedRouteRevision == routeRevision
-        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, finalRouteChunk, instructionType) else null
-        suppressPlannedInstruction = plannedMode && (!enabled || (!finalRouteChunk && instructionType == "arrive"))
+        val enabled = guidanceEnabled && installedRouteRevision == routeRevision && isOnPlannedRoute != false
+        val roadName = currentRoadName ?: progress?.currentLegProgress?.currentStepProgress?.step?.name()
+        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, isOnPlannedRoute) else null
+        suppressPlannedInstruction = plannedMode && (!enabled || isArtificialArrival(finalRouteChunk, instructionType))
         if (suppressPlannedInstruction) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
         when {
             status != null -> maneuverView.showStatus(status)
+            plannedMode && (!enabled || progress == null || isArtificialArrival(finalRouteChunk, instructionType)) -> maneuverView.showContinuation(roadName)
             progress == null -> maneuverView.showStatus("Preparando indicaciones")
-            else -> maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode)
+            else -> maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode, roadName)
         }
     }
 
@@ -869,7 +863,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             connect(
                     recenterButtonId,
                     ConstraintSet.TOP,
-                    overviewButtonId,
+                    soundButtonId,
                     ConstraintSet.BOTTOM,
                     (8 * PIXEL_DENSITY).toInt()
             )
@@ -945,6 +939,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        cameraController.attach()
         mapboxNavigation?.registerRoutesObserver(routesObserver)
         mapboxNavigation?.registerRouteProgressObserver(routeProgressObserver)
         mapboxNavigation?.registerLocationObserver(locationObserver)
@@ -957,6 +952,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        cameraController.detach()
         currentRoutesRequestId?.let { mapboxNavigation?.cancelRouteRequest(it) }
         currentMapMatchingRequestId?.let { mapboxNavigation?.cancelMapMatchingRequest(it) }
         updateHandler.removeCallbacks(updateRunnable)
@@ -1022,16 +1018,16 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
         mapboxNavigation?.setNavigationRoutes(routes)
         mapboxNavigation?.startTripSession(withForegroundService = false)
-        navigationCamera.requestNavigationCameraToFollowing(
-                stateTransitionOptions =
-                        NavigationCameraTransitionOptions.Builder()
-                                .maxDuration(0) // instant transition
-                                .build()
-        )
+        cameraController.routeInstalled()
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
-    fun setRouteMode(value: String?) { plannedMode = value == "planned"; refreshInstructions(); update() }
+    fun setRouteMode(value: String?) {
+        plannedMode = value == "planned"
+        cameraController.setPlannedCoordinates(plannedMode, plannedCoordinates)
+        refreshInstructions()
+        update()
+    }
     fun setReroutingEnabled(value: Boolean?) { reroutingEnabled = value ?: true; update() }
     fun setRouteDeviationTolerance(value: Double?) {
         val next = value?.takeIf { it.isFinite() && it > 0 && it <= 50 } ?: 25.0
@@ -1047,6 +1043,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
     fun setPrefetchCoordinates(value: List<Point>) { prefetchCoordinates = value; update() }
     fun setFinalRouteChunk(value: Boolean?) { finalRouteChunk = value ?: true; refreshInstructions() }
+    fun setIsOnPlannedRoute(value: Boolean?) { isOnPlannedRoute = value; refreshInstructions() }
     fun setGuidanceStatus(value: String?) { guidanceStatus = value ?: "preparing"; refreshInstructions() }
     fun setGuidanceEnabled(value: Boolean?) {
         guidanceEnabled = value ?: false
@@ -1055,6 +1052,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     fun setPlannedRouteCoordinates(value: List<Point>) {
         if (plannedCoordinates != value) plannedController.reset()
         plannedCoordinates = value
+        cameraController.setPlannedCoordinates(plannedMode, value)
         drawPlannedRoute()
     }
     fun setPlannedRouteProgress(value: Map<String, Double>?) {

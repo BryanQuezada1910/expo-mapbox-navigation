@@ -113,6 +113,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var routeRevision = ""
     var guidanceEnabled = false
     var guidanceStatus = "preparing"
+    var isOnPlannedRoute: Bool?
+    var currentRoadName: String?
+    let cameraController = NavigationCameraController()
     var installedRouteRevision = ""
     var installedGuidanceRoute: Route?
     var latestGuidanceProgress: RouteProgress?
@@ -185,6 +188,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
         locationMatchingSubscription = navigation!.locationMatching.sink { [weak self] state in
             guard let self = self else { return }
             self.updateSpeedLimit(state)
+            self.currentRoadName = state.roadName?.text
+            if self.plannedMode { self.refreshPlannedInstructions() }
             guard self.plannedMode else { return }
             let coordinate = state.location.coordinate
             self.onEvent?("onPlannedRouteLocation", ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
@@ -273,6 +278,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func stopPlannedRoute() {
+        cameraController.detach()
         plannedController.reset()
         locationMatchingSubscription?.cancel()
         plannedStyleSubscription?.cancel()
@@ -467,6 +473,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             let newDataSource = MobileViewportDataSource(navigationMapView!.mapView)
             newDataSource.options.followingCameraOptions.zoomRange = followingZoom!...followingZoom!
             navigationMapView?.navigationCamera.viewportDataSource = newDataSource
+            cameraController.configureViewport(planned: plannedMode, coordinates: plannedCoordinates)
         }
     }
 
@@ -752,6 +759,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func onRoutesCalculated(navigationRoutes: NavigationRoutes){
+        let previousCameraState = navigationViewController?.navigationMapView?.navigationCamera.currentCameraState
         if plannedMode {
             installedRouteRevision = routeRevision
             installedGuidanceRoute = navigationRoutes.mainRoute.route
@@ -882,7 +890,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
         refreshPlannedInstructions()
         drawPlannedRoute()
         if let label = plannedProgressLabel { view.bringSubviewToFront(label) }
+        cameraController.attach(to: navigationViewController, planned: plannedMode, coordinates: plannedCoordinates)
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+        cameraController.restore(previousCameraState)
     }
 }
 extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {

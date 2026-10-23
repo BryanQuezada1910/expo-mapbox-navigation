@@ -48,10 +48,14 @@ responses, location, and voice remains separate from these deterministic tests.
 
 `navigationPresentationCases.json` is shared by Kotlin and Swift. It covers
 preparing/unavailable/off-route instructions, turns before an artificial arrival,
-intermediate versus final arrivals, numeric limits, missing limits and errors.
+intermediate versus final arrivals, on-route continuity during matching-window
+loading/retries, road-name continuation instructions, numeric limits, missing
+limits and errors.
 Both harnesses also reject nonfinite speed values. The JavaScript suite above
 checks the bridge status through route loads, window changes, failures, retries,
 departure and rejoining without another route request.
+It also verifies that matching retries keep running while visible guidance stays
+available and that off-route status takes precedence over a failed match.
 
 ```sh
 kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationPresentation.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-presentation-tests.jar
@@ -61,3 +65,21 @@ xcrun swiftc ios/NavigationPresentation.swift tests/navigationPresentation.test.
 ```
 
 See `docs/navigation-indicators.md` for behavior and device verification cases.
+
+## Camera controller regression
+
+This harness runs the production Android camera controller with recording test
+doubles for Android views and the SDK camera/viewport. It checks full-trace
+framing inputs, exclusive overview/follow controls, preserving overview across
+window replacements (including a delayed first matching response), manual pan,
+calculated-mode cleanup and observer registration/removal.
+
+```sh
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationCameraController.kt tests/navigationCamera.test.kt tests/navigation-camera/*.kt -classpath "$MAPBOX_GEOJSON_JAR:$GSON_JAR" -include-runtime -d /tmp/navigation-camera-tests.jar
+java -cp "/tmp/navigation-camera-tests.jar:$MAPBOX_GEOJSON_JAR:$GSON_JAR" expo.modules.mapboxnavigation.NavigationCamera_testKt
+```
+
+The test doubles are only for the standalone JVM harness and never enter the
+Android library build. Compilation against the installed SDK verifies the real
+API separately; framing on screen, layout/rotation and iOS camera controls still
+require device verification.

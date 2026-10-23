@@ -15,6 +15,7 @@ public class ExpoMapboxNavigationModule: Module {
       Prop("routeRevision") { (view: ExpoMapboxNavigationView, value: String?) in view.controller.setRouteRevision(value) }
       Prop("guidanceEnabled") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setGuidanceEnabled(value) }
       Prop("guidanceStatus") { (view: ExpoMapboxNavigationView, value: String?) in view.controller.setGuidanceStatus(value) }
+      Prop("isOnPlannedRoute") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setIsOnPlannedRoute(value) }
       Prop("isFinalRouteChunk") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setFinalRouteChunk(value) }
       Prop("plannedRouteProgress") { (view: ExpoMapboxNavigationView, value: [String: Double]?) in view.controller.setPlannedRouteProgress(value) }
       Prop("plannedRouteCoordinates") { (view: ExpoMapboxNavigationView, value: [[String: Double]]?) in

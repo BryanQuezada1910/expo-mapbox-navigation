@@ -5,15 +5,21 @@ import kotlin.math.roundToInt
 internal fun plannedGuidanceMessage(
     status: String,
     enabled: Boolean,
-    finalChunk: Boolean,
-    instructionType: String?
+    onRoute: Boolean? = null
 ): String? = when {
+    onRoute == false || status == "off-route" -> "Fuera de la ruta planificada"
+    onRoute == true -> null
     status == "unavailable" -> "Indicaciones no disponibles"
-    status == "off-route" -> "Fuera de la ruta planificada"
     !enabled -> "Preparando indicaciones"
-    !finalChunk && instructionType == "arrive" -> "Continuando ruta planificada"
     else -> null
 }
+
+internal fun isArtificialArrival(finalChunk: Boolean, instructionType: String?): Boolean =
+    !finalChunk && instructionType == "arrive"
+
+internal fun plannedContinuationInstruction(roadName: String?): String =
+    roadName?.trim()?.takeIf { it.isNotEmpty() }?.let { "Continúa por $it" }
+        ?: "Continúa por la ruta marcada"
 
 internal data class SpeedLimitPresentation(val text: String, val description: String, val available: Boolean) {
     companion object {

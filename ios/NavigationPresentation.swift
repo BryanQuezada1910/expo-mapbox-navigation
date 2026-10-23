@@ -1,11 +1,22 @@
 import Foundation
 
-func plannedGuidanceMessage(status: String, enabled: Bool, finalChunk: Bool, instructionType: String?) -> String? {
+func plannedGuidanceMessage(status: String, enabled: Bool, onRoute: Bool? = nil) -> String? {
+    if onRoute == false || status == "off-route" { return "Fuera de la ruta planificada" }
+    if onRoute == true { return nil }
     if status == "unavailable" { return "Indicaciones no disponibles" }
-    if status == "off-route" { return "Fuera de la ruta planificada" }
     if !enabled { return "Preparando indicaciones" }
-    if !finalChunk && instructionType == "arrive" { return "Continuando ruta planificada" }
     return nil
+}
+
+func isArtificialArrival(finalChunk: Bool, instructionType: String?) -> Bool {
+    !finalChunk && instructionType == "arrive"
+}
+
+func plannedContinuationInstruction(roadName: String?) -> String {
+    guard let name = roadName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+        return "Continúa por la ruta marcada"
+    }
+    return "Continúa por \(name)"
 }
 
 struct SpeedLimitPresentation {
