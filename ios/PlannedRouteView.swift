@@ -46,6 +46,7 @@ extension ExpoMapboxNavigationViewController {
     }
     func setPlannedRouteProgress(_ progress: [String: Double]?) {
         guard plannedMode, let progress = progress else { return }
+        lastPlannedProgress = progress
         if plannedProgressLabel == nil {
             let label = UILabel()
             label.textAlignment = .center
@@ -63,7 +64,7 @@ extension ExpoMapboxNavigationViewController {
         }
         let distance = (progress["distanceRemaining"] ?? 0) / 1000
         let seconds = progress["durationRemaining"] ?? 0
-        plannedProgressLabel?.text = seconds > 0 ? String(format: "%.1f km · %.0f min", distance, seconds / 60) : String(format: "%.1f km", distance)
+        plannedProgressLabel?.text = seconds > 0 ? String(format: "%.1f km · %.0f min", locale: currentLocale, distance, seconds / 60) : String(format: "%.1f km", locale: currentLocale, distance)
         updateTripProgressVisibility()
         view.bringSubviewToFront(plannedProgressLabel!)
     }
@@ -81,7 +82,11 @@ extension ExpoMapboxNavigationViewController {
         map.location.options.puckType = .puck2D(.navigationDefault)
         view.insertSubview(map, at: 0)
         plannedFallbackMap = map
-        plannedStyleSubscription = map.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
+        plannedStyleSubscription = map.mapboxMap.onStyleLoaded.observe { [weak self] _ in
+            guard let self = self else { return }
+            try? map.mapboxMap.localizeLabels(into: self.currentLocale)
+            self.drawPlannedRoute()
+        }
         if let location = initialLocation { map.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: initialLocationZoom ?? 15)) }
         tripSession?.startFreeDrive()
         refreshPlannedInstructions()

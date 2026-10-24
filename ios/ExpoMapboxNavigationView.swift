@@ -4,37 +4,7 @@ import MapboxMaps
 import MapboxNavigationUIKit
 import MapboxDirections
 import Combine
-import ObjectiveC
 
-private let swizzleBundleOnce: Void = {
-    let originalSelector = #selector(Bundle.localizedString(forKey:value:table:))
-    let swizzledSelector = #selector(Bundle.customLocalizedString(forKey:value:table:))
-    guard let originalMethod = class_getInstanceMethod(Bundle.self, originalSelector),
-          let swizzledMethod = class_getInstanceMethod(Bundle.self, swizzledSelector) else { return }
-    method_exchangeImplementations(originalMethod, swizzledMethod)
-}()
-
-extension Bundle {
-    @objc func customLocalizedString(forKey key: String, value: String?, table tableName: String?) -> String {
-        guard let language = UserDefaults.standard.stringArray(forKey: "AppleLanguages")?.first else {
-            return self.customLocalizedString(forKey: key, value: value, table: tableName)
-        }
-        // Intentar encontrar el bundle específico (ej: es-MX) o el base (ej: es)
-        var path = self.path(forResource: language, ofType: "lproj")
-            ?? self.path(forResource: String(language.prefix(2)), ofType: "lproj")
-
-        // Mapbox usa en-US en lugar de en
-        if path == nil && language.hasPrefix("en") {
-            path = self.path(forResource: "en-US", ofType: "lproj")
-        }
-
-        if let validPath = path, let languageBundle = Bundle(path: validPath) {
-            return languageBundle.customLocalizedString(forKey: key, value: value, table: tableName)
-        } else {
-            return self.customLocalizedString(forKey: key, value: value, table: tableName)
-        }
-    }
-}
 class ExpoMapboxNavigationView: ExpoView {
     private let onRouteProgressChanged = EventDispatcher()
     private let onCancelNavigation = EventDispatcher()
@@ -51,7 +21,6 @@ class ExpoMapboxNavigationView: ExpoView {
 
     required init(appContext: AppContext? = nil) {
         super.init(appContext: appContext)
-        _ = swizzleBundleOnce
         clipsToBounds = true
         addSubview(controller.view)
 
@@ -147,6 +116,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var initialLocationZoom: Double? = nil
     var currentWaypointIndices: Array<Int>? = nil
     var currentLocale: Locale = Locale.current
+    var strings: NavigationStrings { NavigationStrings(locale: currentLocale) }
+    var lastSpeedValue: Double?
+    var lastSpeedUnit = "km/h"
+    var lastPlannedProgress: [String: Double]?
     var currentRouteProfile: String? = nil
     var currentRouteExcludeList: Array<String>? = nil
     var currentMapStyle: String? = nil
@@ -181,6 +154,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     init() {
         super.init(nibName: nil, bundle: nil)
+        NavigationLocalization.configure(currentLocale)
         mapboxNavigation = ExpoMapboxNavigationViewController.navigationProvider.mapboxNavigation
         routingProvider = mapboxNavigation!.routingProvider()
         navigation = mapboxNavigation!.navigation()
@@ -389,17 +363,18 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func setLocale(locale: String?) {
         let previousLocale = currentLocale.identifier
-        if(locale != nil){
-            currentLocale = Locale(identifier: locale!)
-        } else {
-            currentLocale = Locale.current
-        }
+        currentLocale = navigationLocale(locale)
+        NavigationLocalization.configure(currentLocale)
+        cameraController.setLocale(currentLocale)
         if previousLocale != currentLocale.identifier {
             plannedController.reset()
+            latestGuidanceProgress = nil
             _forceRecreateNavigationController = true
         }
-        UserDefaults.standard.set([currentLocale.identifier], forKey: "AppleLanguages")
-        UserDefaults.standard.synchronize()
+        if let map = plannedFallbackMap { try? map.mapboxMap.localizeLabels(into: currentLocale) }
+        refreshSpeedLimit()
+        refreshPlannedInstructions()
+        if let progress = lastPlannedProgress { setPlannedRouteProgress(progress) }
         update()
     }
 
@@ -525,7 +500,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             if let iconName = marker["iconName"] as? String, let image = UIImage(named: iconName) {
                 annotation.image = .init(image: image, name: iconName)
             } else {
-                let letter = (marker["markerLetter"] as? String).map { String($0.prefix(1)) } ?? "P"
+                let letter = (marker["markerLetter"] as? String).map { String($0.prefix(1)) } ?? strings.defaultMarkerLetter
                 let stopImage = makeStopMarkerImage(color: markerColor, letter: letter, size: 56)
                 if let img = stopImage {
                     let colorHex = markerColor.toHexString()
@@ -544,7 +519,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     /// La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
     func makeStopMarkerImage(color: UIColor, letter: String, size: CGFloat) -> UIImage? {
         let strokeWidth: CGFloat = 3
-        let letterChar = String((letter.isEmpty ? "P" : String(letter.prefix(1))))
+        let letterChar = letter.isEmpty ? strings.defaultMarkerLetter : String(letter.prefix(1))
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
         let image = renderer.image { ctx in
             let rect = CGRect(x: strokeWidth / 2, y: strokeWidth / 2, width: size - strokeWidth, height: size - strokeWidth)
@@ -778,7 +753,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         let bottomBanner = BottomBannerViewController()
         bottomBanner.distanceFormatter.locale = currentLocale
         bottomBanner.dateFormatter.locale = currentLocale
-        bottomBanner.dateFormatter.dateFormat = "h:mm a"
+        bottomBanner.dateFormatter.setLocalizedDateFormatFromTemplate("jmm")
 
         let navigationOptions = NavigationOptions(
             mapboxNavigation: self.mapboxNavigation!,
@@ -792,6 +767,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
         let newNavigationControllerRequired = navigationViewController == nil || _forceRecreateNavigationController
 
         if(newNavigationControllerRequired){
+            pointAnnotationManager = nil
+            bottomLegendLabel = nil
             if let oldVC = navigationViewController {
                 oldVC.willMove(toParent: nil)
                 oldVC.view.removeFromSuperview()
@@ -872,6 +849,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             label.textAlignment = .center
             label.backgroundColor = .clear
 
+            label.text = currentBottomLegend
             bottomLegendLabel = label
             navigationViewController.view.addSubview(label)
 
@@ -890,6 +868,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         refreshPlannedInstructions()
         drawPlannedRoute()
         if let label = plannedProgressLabel { view.bringSubviewToFront(label) }
+        cameraController.setLocale(currentLocale)
         cameraController.attach(to: navigationViewController, planned: plannedMode, coordinates: plannedCoordinates)
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
         cameraController.restore(previousCameraState)

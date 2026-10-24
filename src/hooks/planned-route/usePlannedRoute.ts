@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
+import { navigationStrings } from "../../utils/localization/navigationLocale";
 import type {
   Coordinate,
   ExpoMapboxNavigationViewProps,
@@ -87,11 +88,12 @@ export function usePlannedRoute(
     progressRef.current = undefined;
     notify(
       valid ? "preparing" : "unavailable",
-      valid ? undefined : "Geometría de ruta inválida"
+      valid ? undefined : navigationStrings(props.locale).invalidRouteGeometry
     );
   }, [identity, valid]);
   useEffect(() => {
-    if (planned && valid) notify("preparing");
+    if (!valid) notify("unavailable", navigationStrings(props.locale).invalidRouteGeometry);
+    else if (planned) notify("preparing");
   }, [revision, planned, valid]);
   useEffect(() => {
     if (!planned || state !== "unavailable" || !valid) return;

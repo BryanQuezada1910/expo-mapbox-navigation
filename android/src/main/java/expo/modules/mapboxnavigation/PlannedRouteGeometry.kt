@@ -15,11 +15,10 @@ internal object PlannedRouteGeometry {
         val originalDeviation: Double = 0.0,
         val matchedDeviation: Double = 0.0,
     ) {
-        fun message(tolerance: Double): String = String.format(
-            java.util.Locale.US,
-            "La guía de Mapbox no coincide con la ruta planificada (motivo: %s; inicio: %.1f m; final: %.1f m; desvío original: %.1f m; desvío guía: %.1f m; tolerancia: %.1f m)",
-            reason, startOffset, endOffset, originalDeviation, matchedDeviation, tolerance,
-        )
+        fun message(tolerance: Double, locale: java.util.Locale = java.util.Locale("es")): String {
+            fun number(value: Double) = String.format(locale, "%.1f", value)
+            return NavigationStrings(locale).routeMismatch(reason, number(startOffset), number(endOffset), number(originalDeviation), number(matchedDeviation), number(tolerance))
+        }
     }
 
     private data class Interval(val start: Double, val end: Double) {

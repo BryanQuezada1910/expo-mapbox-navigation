@@ -21,7 +21,7 @@ Mapbox GeoJSON and Gson jars resolved by the app's Gradle build. Set
 parent (the package root):
 
 ```sh
-kotlinc android/src/main/java/expo/modules/mapboxnavigation/PlannedRouteGeometry.kt tests/plannedRouteGeometry.test.kt -classpath "$MAPBOX_GEOJSON_JAR:$GSON_JAR" -include-runtime -d /tmp/planned-route-geometry.jar
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationStrings.kt android/src/main/java/expo/modules/mapboxnavigation/PlannedRouteGeometry.kt tests/plannedRouteGeometry.test.kt -classpath "$MAPBOX_GEOJSON_JAR:$GSON_JAR" -include-runtime -d /tmp/planned-route-geometry.jar
 java -cp "/tmp/planned-route-geometry.jar:$MAPBOX_GEOJSON_JAR:$GSON_JAR" expo.modules.mapboxnavigation.PlannedRouteGeometry_testKt tests/plannedRouteGeometryCases.json
 ```
 
@@ -37,7 +37,7 @@ Compile the integrated Android module from the app's `android` directory:
 On macOS, from the package root:
 
 ```sh
-xcrun swiftc ios/PlannedRouteGeometry.swift tests/plannedRouteGeometry.test.swift -o /tmp/planned-route-geometry
+xcrun swiftc ios/NavigationLocale.swift ios/NavigationStrings.swift ios/PlannedRouteGeometry.swift tests/plannedRouteGeometry.test.swift -o /tmp/planned-route-geometry
 /tmp/planned-route-geometry tests/plannedRouteGeometryCases.json
 ```
 
@@ -58,9 +58,9 @@ It also verifies that matching retries keep running while visible guidance stays
 available and that off-route status takes precedence over a failed match.
 
 ```sh
-kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationPresentation.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-presentation-tests.jar
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationStrings.kt android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationPresentation.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-presentation-tests.jar
 java -cp "/tmp/navigation-presentation-tests.jar:$GSON_JAR" expo.modules.mapboxnavigation.NavigationPresentation_testKt tests/navigationPresentationCases.json
-xcrun swiftc ios/NavigationPresentation.swift tests/navigationPresentation.test.swift -o /tmp/navigation-presentation-tests
+xcrun swiftc ios/NavigationLocale.swift ios/NavigationStrings.swift ios/NavigationPresentation.swift tests/navigationPresentation.test.swift -o /tmp/navigation-presentation-tests
 /tmp/navigation-presentation-tests tests/navigationPresentationCases.json
 ```
 
@@ -83,3 +83,26 @@ The test doubles are only for the standalone JVM harness and never enter the
 Android library build. Compilation against the installed SDK verifies the real
 API separately; framing on screen, layout/rotation and iOS camera controls still
 require device verification.
+
+## Locale and SDK resource regression tests
+
+The shared catalog generates the native catalogs; the JavaScript suite checks
+that they are synchronized. Shared fixtures cover explicit Spanish/English,
+regional variants, underscore/case normalization, device defaults and custom-UI
+fallback. Hook tests cover a live locale change, stale old-language responses,
+and invalid-geometry messages changing language without a route change.
+
+```sh
+node --test tests/plannedRoute.test.cjs tests/navigationLocalization.test.cjs
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationLocale.kt android/src/main/java/expo/modules/mapboxnavigation/NavigationStrings.kt android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationLocalization.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-localization-tests.jar
+java -cp "/tmp/navigation-localization-tests.jar:$GSON_JAR" expo.modules.mapboxnavigation.NavigationLocalization_testKt tests/navigationLocalizationCases.json src/configs/localization/navigationStrings.json
+xcrun swiftc ios/NavigationLocale.swift ios/NavigationStrings.swift ios/NavigationPresentation.swift tests/navigationLocalization.test.swift -o /tmp/navigation-localization-tests
+/tmp/navigation-localization-tests tests/navigationLocalizationCases.json src/configs/localization/navigationStrings.json
+xcrun swiftc ios/NavigationLocale.swift ios/NavigationLocalization.swift tests/navigationBundles.test.swift -o /tmp/navigation-bundle-tests
+/tmp/navigation-bundle-tests
+```
+
+The bundle harness switches actual temporary Mapbox resource bundles between
+Spanish and English while checking that a host-app bundle and `AppleLanguages`
+remain unchanged. Native UI layout, generated Mapbox turns and speech still
+require verification in a fresh device build.

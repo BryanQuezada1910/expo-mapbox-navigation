@@ -102,6 +102,9 @@ export type ExpoMapboxNavigationViewProps = {
   onPlannedRouteLocation?: (event: { nativeEvent: Coordinate }) => void;
   waypointIndices?: number[];
   useRouteMatchingApi?: boolean;
+  /** App locale for map/instructions/voice and UI strings (Spanish/English).
+   * Missing or "default" uses the device locale. Can change during navigation.
+   */
   locale?: string;
   routeProfile?: string;
   routeExcludeList?: string[];

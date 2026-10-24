@@ -42,8 +42,8 @@ final class NavigationStatusBannerView: UIView {
         isHidden = message == nil
     }
 
-    func showContinuation(roadName: String?) {
-        label.text = plannedContinuationInstruction(roadName: roadName)
+    func showContinuation(roadName: String?, locale: Locale) {
+        label.text = plannedContinuationInstruction(roadName: roadName, locale: locale)
         icon.isHidden = roadName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
         isHidden = false
     }

@@ -115,7 +115,11 @@ When enabled, uses Mapbox's Map Matching API to generate the route instead of th
 
 #### `locale`
 
-A string representation of a locale/language code that adjusts the Map labels, directions, and voice where possible. By default, uses the devices locale.
+A locale/language code, such as `es-MX` or `en-US`, controlling map labels,
+directions, voice and the library's visual/accessibility strings. Spanish and
+English regional variants are supported by the custom UI. Missing or `default`
+values use the device locale. Changes refresh the current UI and request route
+instructions in the new language. See [localization](docs/localization.md).
 
 #### `routeProfile`
 

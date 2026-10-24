@@ -12,9 +12,9 @@ enum PlannedRouteGeometry {
         var originalDeviation = 0.0
         var matchedDeviation = 0.0
 
-        func message(tolerance: Double) -> String {
-            String(format: "La guía de Mapbox no coincide con la ruta planificada (motivo: %@; inicio: %.1f m; final: %.1f m; desvío original: %.1f m; desvío guía: %.1f m; tolerancia: %.1f m)",
-                locale: Locale(identifier: "en_US_POSIX"), reason, startOffset, endOffset, originalDeviation, matchedDeviation, tolerance)
+        func message(tolerance: Double, locale: Locale = Locale(identifier: "es")) -> String {
+            func number(_ value: Double) -> String { String(format: "%.1f", locale: locale, value) }
+            return NavigationStrings(locale: locale).routeMismatch(reason: reason, start: number(startOffset), end: number(endOffset), original: number(originalDeviation), matched: number(matchedDeviation), tolerance: number(tolerance))
         }
     }
 

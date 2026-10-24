@@ -1,0 +1,14 @@
+[
+  { "locale": "es-MX", "systemLocale": "en-US", "language": "es" },
+  { "locale": "en-US", "systemLocale": "es-MX", "language": "en" },
+  { "locale": "es", "systemLocale": "en-US", "language": "es" },
+  { "locale": "en", "systemLocale": "es-MX", "language": "en" },
+  { "locale": "EN_us", "systemLocale": "es-MX", "language": "en" },
+  { "locale": "es_ES", "systemLocale": "en-US", "language": "es" },
+  { "locale": "en-GB", "systemLocale": "es-MX", "language": "en" },
+  { "locale": "fr-FR", "systemLocale": "en-US", "language": "es" },
+  { "locale": null, "systemLocale": "en-US", "language": "en" },
+  { "locale": "default", "systemLocale": "es-MX", "language": "es" },
+  { "locale": "DEFAULT", "systemLocale": "en-US", "language": "en" },
+  { "locale": "", "systemLocale": "en-GB", "language": "en" }
+]

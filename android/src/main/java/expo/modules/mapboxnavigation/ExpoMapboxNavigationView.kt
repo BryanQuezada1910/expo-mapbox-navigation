@@ -153,6 +153,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var isMuted = false
     private var currentCoordinates: List<Point>? = null
     private var currentLocale = Locale.getDefault()
+    private val strings get() = NavigationStrings(currentLocale)
+    private var lastSpeedValue: Double? = null
+    private var lastSpeedUnit = "km/h"
+    private var lastSpeedFailed = false
+    private var lastPlannedProgress: Map<String, Double>? = null
     private var currentWaypointIndices: List<Int>? = null
     private var currentRoutesRequestId: Long? = null
     private var currentMapMatchingRequestId: Long? = null
@@ -253,6 +258,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 if (isMuted) R.drawable.icon_sound else R.drawable.icon_mute
                         )
                 isMuted = !isMuted
+                refreshControlLabels()
             }
 
     private val overviewButtonId = 5
@@ -377,8 +383,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 ) {}
                 override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
                     if (isAttachedToWindow && !plannedMode) {
-                        maneuverView.showStatus("Indicaciones no disponibles")
-                        onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: "No se pudo cargar la ruta")))
+                        maneuverView.showStatus(strings.instructionsUnavailable)
+                        onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: strings.routeLoadFailed)))
                     }
                 }
             }
@@ -597,13 +603,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             ?: progress?.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type()
         val enabled = guidanceEnabled && installedRouteRevision == routeRevision && isOnPlannedRoute != false
         val roadName = currentRoadName ?: progress?.currentLegProgress?.currentStepProgress?.step?.name()
-        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, isOnPlannedRoute) else null
+        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, isOnPlannedRoute, currentLocale) else null
         suppressPlannedInstruction = plannedMode && (!enabled || isArtificialArrival(finalRouteChunk, instructionType))
         if (suppressPlannedInstruction) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
         when {
             status != null -> maneuverView.showStatus(status)
             plannedMode && (!enabled || progress == null || isArtificialArrival(finalRouteChunk, instructionType)) -> maneuverView.showContinuation(roadName)
-            progress == null -> maneuverView.showStatus("Preparando indicaciones")
+            progress == null -> maneuverView.showStatus(strings.preparingInstructions)
             else -> maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode, roadName)
         }
     }
@@ -611,15 +617,32 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private fun updateSpeedLimit(result: LocationMatcherResult) {
         val location = result.enhancedLocation
         val inUS = isUS(location.latitude, location.longitude)
-        val unit = if (inUS) "mph" else "km/h"
-        val presentation = try {
+        lastSpeedUnit = if (inUS) "mph" else "km/h"
+        try {
             val info = speedInfoApi.updatePostedAndCurrentSpeed(result, if (inUS) imperialDistanceFormatter else metricDistanceFormatter)
-            SpeedLimitPresentation.from(info?.postedSpeed?.toDouble(), unit)
+            lastSpeedValue = info?.postedSpeed?.toDouble()
+            lastSpeedFailed = false
         } catch (error: Exception) {
             android.util.Log.w("Mapbox", "Could not update speed limit", error)
-            SpeedLimitPresentation.from(null, unit, failed = true)
+            lastSpeedValue = null
+            lastSpeedFailed = true
         }
-        speedLimitContainer.render(presentation)
+        refreshSpeedLimit()
+    }
+
+    private fun refreshSpeedLimit() {
+        speedLimitContainer.render(SpeedLimitPresentation.from(lastSpeedValue, lastSpeedUnit, lastSpeedFailed, currentLocale))
+    }
+
+    private fun refreshControlLabels() {
+        overviewButton.contentDescription = strings.overviewRoute
+        recenterButton.contentDescription = strings.followLocation
+        soundButton.contentDescription = if (isMuted) strings.unmuteVoice else strings.muteVoice
+        cancelButton.contentDescription = strings.cancelNavigation
+        listOf(overviewButton, recenterButton, soundButton, cancelButton).forEach { button ->
+            button.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            button.findViewById<ImageView>(com.mapbox.navigation.ui.components.R.id.buttonIcon)?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
     }
 
     private fun createCenteredTextView(): TextView {
@@ -940,6 +963,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         cameraController.attach()
+        refreshControlLabels()
+        refreshSpeedLimit()
         mapboxNavigation?.registerRoutesObserver(routesObserver)
         mapboxNavigation?.registerRouteProgressObserver(routeProgressObserver)
         mapboxNavigation?.registerLocationObserver(locationObserver)
@@ -1057,6 +1082,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
     fun setPlannedRouteProgress(value: Map<String, Double>?) {
         if (!plannedMode || value == null) return
+        lastPlannedProgress = value
         tripProgressDistanceRemainingTextView.text = String.format(currentLocale, "%.1f km", (value["distanceRemaining"] ?: 0.0) / 1000)
         val seconds = value["durationRemaining"] ?: 0.0
         tripProgressTimeRemainingTextView.text = if (seconds > 0) String.format(currentLocale, "%.0f min", seconds / 60) else "—"
@@ -1091,11 +1117,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setLocale(localeStr: String?) {
         val previousLocale = currentLocale
-        currentLocale =
-                if (localeStr == null || localeStr == "default") Locale.getDefault()
-                else Locale.Builder().setLanguageTag(localeStr).build()
-
-        if (previousLocale != currentLocale) plannedController.reset()
+        currentLocale = navigationLocale(localeStr)
+        if (previousLocale != currentLocale) {
+            plannedController.reset()
+            latestRouteProgress = null
+            speechApi.cancel()
+            voiceInstructionsPlayer.clear()
+        }
         try {
             val config = context.resources.configuration
             config.setLocale(currentLocale)
@@ -1104,6 +1132,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             e.printStackTrace()
         }
 
+        maneuverView.setLocale(currentLocale)
+        refreshInstructions()
+        refreshSpeedLimit()
+        refreshControlLabels()
+        lastPlannedProgress?.let { setPlannedRouteProgress(it) }
         update()
     }
 
@@ -1144,6 +1177,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             soundButton
                     .findViewById<ImageView>(com.mapbox.navigation.ui.components.R.id.buttonIcon)
                     .setImageResource(if (isMuted) R.drawable.icon_mute else R.drawable.icon_sound)
+            refreshControlLabels()
         }
     }
 
@@ -1240,7 +1274,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     }
                 }
             } else {
-                val letter = (marker["markerLetter"] as? String)?.take(1) ?: "P"
+                val letter = (marker["markerLetter"] as? String)?.take(1) ?: strings.defaultMarkerLetter
                 val defaultBitmap = createDefaultMarkerBitmap(markerColor, letter)
                 pointAnnotationOptions.withIconImage(defaultBitmap)
             }
@@ -1321,7 +1355,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
      * Crea un marcador por defecto: círculo con borde blanco, relleno de color y letra centrada.
      * La letra es "P" (Parada) en español o "S" (Stop) en inglés según markerLetter.
      */
-    private fun createDefaultMarkerBitmap(markerColor: Int = Color.RED, letter: String = "P"): Bitmap {
+    private fun createDefaultMarkerBitmap(markerColor: Int = Color.RED, letter: String = strings.defaultMarkerLetter): Bitmap {
         val size = (56 * PIXEL_DENSITY).toInt()
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -1344,7 +1378,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
         canvas.drawCircle(cx, cy, radius - strokePaint.strokeWidth / 2f, fillPaint)
 
-        val text = letter.take(1).ifEmpty { "P" }
+        val text = letter.take(1).ifEmpty { strings.defaultMarkerLetter }
         val textPaint = Paint().apply {
             color = Color.WHITE
             textSize = 18 * PIXEL_DENSITY
@@ -1394,6 +1428,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     private fun performUpdate() {
+        speechApi.cancel()
+        voiceInstructionsPlayer.shutdown()
+        maneuverApi.cancel()
         voiceInstructionsPlayer =
                 MapboxVoiceInstructionsPlayer(context, currentLocale.toLanguageTag())
         voiceInstructionsPlayer.volume(

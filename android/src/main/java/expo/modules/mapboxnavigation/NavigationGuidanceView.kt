@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
+import java.util.Locale
 import com.mapbox.bindgen.Expected
 import com.mapbox.navigation.tripdata.maneuver.model.Maneuver
 import com.mapbox.navigation.tripdata.maneuver.model.ManeuverError
@@ -14,6 +15,7 @@ import com.mapbox.navigation.ui.components.maneuver.model.ManeuverViewOptions
 import com.mapbox.navigation.ui.components.maneuver.view.MapboxManeuverView
 
 internal class NavigationGuidanceView(context: Context) : FrameLayout(context) {
+    private var locale = Locale.getDefault()
     private val maneuverView = MapboxManeuverView(context).apply {
         updateManeuverViewOptions(
             ManeuverViewOptions.Builder().primaryManeuverOptions(
@@ -37,8 +39,10 @@ internal class NavigationGuidanceView(context: Context) : FrameLayout(context) {
         addView(maneuverView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(statusLabel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(continuationView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        showStatus("Preparando indicaciones")
+        showStatus(NavigationStrings(locale).preparingInstructions)
     }
+
+    fun setLocale(value: Locale) { locale = value }
 
     fun showStatus(message: String) {
         continuationView.visibility = View.GONE
@@ -50,16 +54,16 @@ internal class NavigationGuidanceView(context: Context) : FrameLayout(context) {
     fun showContinuation(roadName: String?) {
         maneuverView.visibility = View.GONE
         statusLabel.visibility = View.GONE
-        continuationView.render(roadName)
+        continuationView.render(roadName, locale)
         continuationView.visibility = View.VISIBLE
     }
 
     fun renderManeuvers(maneuvers: Expected<ManeuverError, List<Maneuver>>, planned: Boolean, roadName: String? = null) {
         maneuvers.fold(
-            { if (planned) showContinuation(roadName) else showStatus("Indicaciones no disponibles") },
+            { if (planned) showContinuation(roadName) else showStatus(NavigationStrings(locale).instructionsUnavailable) },
             { values ->
                 if (values.isEmpty()) {
-                    if (planned) showContinuation(roadName) else showStatus("Indicaciones no disponibles")
+                    if (planned) showContinuation(roadName) else showStatus(NavigationStrings(locale).instructionsUnavailable)
                 }
                 else {
                     continuationView.visibility = View.GONE

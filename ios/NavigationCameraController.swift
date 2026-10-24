@@ -10,6 +10,12 @@ final class NavigationCameraController {
     private weak var overviewButton: UIButton?
     private var stateSubscription: AnyCancellable?
     private var plannedViewport: PlannedRouteViewportDataSource?
+    private var locale = Locale.current
+
+    func setLocale(_ locale: Locale) {
+        self.locale = locale
+        if let state = controller?.navigationMapView?.navigationCamera.currentCameraState { updateButtons(state) }
+    }
 
     func attach(to controller: NavigationViewController, planned: Bool, coordinates: [CLLocationCoordinate2D]) {
         if self.controller !== controller {
@@ -23,7 +29,6 @@ final class NavigationCameraController {
                     } == true
                 }
             } ?? buttons.first
-            overviewButton?.accessibilityLabel = "Ver ruta completa"
             stateSubscription?.cancel()
             stateSubscription = controller.navigationMapView?.navigationCamera.cameraStates.sink { [weak self] in
                 self?.updateButtons($0)
@@ -68,9 +73,11 @@ final class NavigationCameraController {
 
     private func updateButtons(_ state: NavigationCameraState) {
         let following = state == .following
+        let strings = NavigationStrings(locale: locale)
+        overviewButton?.accessibilityLabel = strings.overviewRoute
         overviewButton?.isHidden = !following
         for button in controller?.navigationView.findViews(subclassOf: ResumeButton.self) ?? [] {
-            button.accessibilityLabel = "Seguir ubicación"
+            button.accessibilityLabel = strings.followLocation
             button.isHidden = following
         }
     }

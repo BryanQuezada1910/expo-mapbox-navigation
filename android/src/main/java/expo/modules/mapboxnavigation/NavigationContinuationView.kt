@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ImageView
 import android.widget.TextView
+import java.util.Locale
 
 internal class NavigationContinuationView(context: Context) : LinearLayout(context) {
     private val icon = ImageView(context).apply { setImageDrawable(NavigationContinuationIcon()) }
@@ -26,8 +27,8 @@ internal class NavigationContinuationView(context: Context) : LinearLayout(conte
         addView(label, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
     }
 
-    fun render(roadName: String?) {
-        label.text = plannedContinuationInstruction(roadName)
+    fun render(roadName: String?, locale: Locale) {
+        label.text = plannedContinuationInstruction(roadName, locale)
         icon.visibility = if (roadName.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 }

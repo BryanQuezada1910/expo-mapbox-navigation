@@ -36,7 +36,7 @@ final class PlannedRouteController {
         }
         guard tasks[requestKey] == nil else { return }
         guard coordinates.count >= 2, coordinates.count <= 100, let provider = provider() else {
-            if requestKey == activeKey { failed("Bloque de navegación inválido o servicio no disponible", activeRevision) }
+            if requestKey == activeKey { failed(NavigationStrings(locale: locale).invalidRouteOrUnavailable, activeRevision) }
             return
         }
         let waypoints = coordinates.enumerated().map { index, coordinate -> Waypoint in
@@ -63,7 +63,7 @@ final class PlannedRouteController {
                 let shape = routes.mainRoute.route.shape?.coordinates ?? []
                 let validation = PlannedRouteGeometry.validate(coordinates, shape, tolerance: tolerance)
                 guard validation.matches else {
-                    if requestKey == self.activeKey { self.failed(validation.message(tolerance: tolerance), self.activeRevision) }
+                    if requestKey == self.activeKey { self.failed(validation.message(tolerance: tolerance, locale: locale), self.activeRevision) }
                     return
                 }
                 if self.cache.count >= 3, let old = self.cache.keys.first(where: { $0 != self.activeKey }) { self.cache.removeValue(forKey: old) }

@@ -25,7 +25,7 @@ internal class SpeedLimitIndicatorView(context: Context) : FrameLayout(context) 
         background = border
         addView(label, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        render(SpeedLimitPresentation.from(null, "km/h"))
+        render(SpeedLimitPresentation.from(null, "km/h", locale = java.util.Locale.getDefault()))
     }
 
     fun render(presentation: SpeedLimitPresentation) {

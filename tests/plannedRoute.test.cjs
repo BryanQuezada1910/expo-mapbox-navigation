@@ -15,6 +15,9 @@ function load(relative, modules = {}) {
   return module.exports;
 }
 const geometry = load('utils/planned-route/routeGeometry.ts');
+const localization = load('utils/localization/navigationLocale.ts', {
+  '../../configs/localization/navigationStrings.json': require('../src/configs/localization/navigationStrings.json'),
+});
 const points = count => Array.from({ length: count }, (_, index) => ({ latitude: 19 + index / 100000, longitude: -99 + index / 100000 }));
 for (const count of [2, 100, 101, 1000, 1001, 10000]) {
   test('all ' + count + ' points remain covered, with exact overlaps', () => {
@@ -65,7 +68,7 @@ test('window switches inside overlap before artificial destination', () => {
 function setupHook(coordinates) {
   const slots = [], effects = [], timers = new Map();
   let cursor = 0, dirty = false, result;
-  const events = [];
+  const events = [], reports = [];
   const same = (first, second) => first && second && first.length === second.length && first.every((value, index) => Object.is(value, second[index]));
   const react = {
     useState(initial) {
@@ -101,12 +104,12 @@ function setupHook(coordinates) {
   const module = { exports: {} };
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
     module, exports: module.exports,
-    require: name => name === 'react' ? react : name === 'react-native' ? { AppState: { addEventListener: () => ({ remove() {} }) } } : geometry,
+    require: name => name === 'react' ? react : name === 'react-native' ? { AppState: { addEventListener: () => ({ remove() {} }) } } : name.includes('navigationLocale') ? localization : geometry,
     setTimeout: callback => { const id = timers.size; timers.set(id, callback); return id; },
     clearTimeout: id => timers.delete(id), console
   });
   const props = { coordinates, routeMode: 'planned', plannedRouteDistance: 2000, plannedRouteDuration: 100,
-    onGuidanceStateChanged: event => events.push(event.nativeEvent.state) };
+    onGuidanceStateChanged: event => { events.push(event.nativeEvent.state); reports.push(event.nativeEvent); } };
   const render = () => {
     let runs = 0;
     do {
@@ -117,8 +120,39 @@ function setupHook(coordinates) {
     } while (dirty);
     return result;
   };
-  return { render, props, events, timers };
+  return { render, props, events, reports, timers };
 }
+
+test('invalid-geometry messages update when only locale changes', () => {
+  const harness = setupHook([]);
+  harness.props.locale = 'es-MX';
+  harness.render();
+  assert.equal(harness.reports.at(-1).errorMessage, 'Geometría de ruta inválida');
+  harness.props.locale = 'en-US';
+  harness.render();
+  assert.equal(harness.reports.at(-1).errorMessage, 'Invalid route geometry');
+});
+
+test('locale changes invalidate instructions without replacing the original trace', () => {
+  const coordinates = points(201), harness = setupHook(coordinates);
+  harness.props.locale = 'es-MX';
+  let view = harness.render();
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[20] });
+  view = harness.render();
+  const previousRevision = view.routeRevision;
+  view.onRoutesLoaded({ nativeEvent: { routeRevision: previousRevision, routes: {} } });
+  assert.equal(harness.render().guidanceEnabled, true);
+  harness.props.locale = 'en-US';
+  view = harness.render();
+  assert.notEqual(view.routeRevision, previousRevision);
+  assert.equal(view.guidanceEnabled, false);
+  assert.equal(view.isOnPlannedRoute, true);
+  assert.equal(view.plannedRouteCoordinates, coordinates);
+  view.onRoutesLoaded({ nativeEvent: { routeRevision: previousRevision, routes: {} } });
+  assert.equal(harness.render().guidanceEnabled, false);
+  view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
+  assert.equal(harness.render().guidanceEnabled, true);
+});
 test('guidance follows original windows without replacing full geometry', () => {
   const coordinates = points(201), harness = setupHook(coordinates);
   let view = harness.render();

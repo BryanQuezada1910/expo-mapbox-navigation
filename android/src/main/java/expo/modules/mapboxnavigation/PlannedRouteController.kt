@@ -31,10 +31,12 @@ internal class PlannedRouteController(
         if (next.size >= 2) request(next, revision, tolerance, language, true)
     }
     private fun request(points: List<Point>, revision: String, tolerance: Double, language: String, prefetch: Boolean) {
+        val locale = navigationLocale(language)
+        val strings = NavigationStrings(locale)
         val snapshot = points.toList()
         cache[snapshot]?.let { if (!prefetch && revision == activeRevision) ready(it, revision); return }
         if (snapshot.size !in 2..100) {
-            if (!prefetch) failed("El bloque de navegación debe contener entre 2 y 100 puntos", revision)
+            if (!prefetch) failed(strings.invalidRouteChunk, revision)
             return
         }
         // A prefetched request may finish after its window becomes active.
@@ -62,7 +64,7 @@ internal class PlannedRouteController(
                 val geometry = encoded?.let { PolylineUtils.decode(it, 6) } ?: emptyList()
                 val validation = PlannedRouteGeometry.validate(snapshot, geometry, tolerance)
                 if (!validation.matches) {
-                    if (snapshot == activePoints) failed(validation.message(tolerance), activeRevision)
+                    if (snapshot == activePoints) failed(validation.message(tolerance, locale), activeRevision)
                     return
                 }
                 cache[snapshot] = routes
@@ -73,7 +75,7 @@ internal class PlannedRouteController(
         if (id != null) requests[snapshot] = id
         else {
             pending.remove(snapshot)
-            if (!prefetch) failed("Navegación no disponible", revision)
+            if (!prefetch) failed(strings.navigationUnavailable, revision)
         }
     }
 }

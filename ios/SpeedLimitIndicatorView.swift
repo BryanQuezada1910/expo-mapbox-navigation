@@ -22,7 +22,7 @@ final class SpeedLimitIndicatorView: UIView {
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
-        render(.from(speed: nil, unit: "km/h"))
+        render(.from(speed: nil, unit: "km/h", locale: .current))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -40,7 +40,13 @@ extension ExpoMapboxNavigationViewController {
         let inUS = isUS(lat: coordinate.latitude, lon: coordinate.longitude)
         let unit: UnitSpeed = inUS ? .milesPerHour : .kilometersPerHour
         let speed = state.speedLimit.value?.converted(to: unit).value
-        speedLimitIndicator.render(.from(speed: speed, unit: inUS ? "mph" : "km/h"))
+        lastSpeedValue = speed
+        lastSpeedUnit = inUS ? "mph" : "km/h"
+        refreshSpeedLimit()
+    }
+
+    func refreshSpeedLimit() {
+        speedLimitIndicator.render(.from(speed: lastSpeedValue, unit: lastSpeedUnit, locale: currentLocale))
     }
 
     func refreshPlannedInstructions() {
@@ -57,7 +63,7 @@ extension ExpoMapboxNavigationViewController {
             ?? progress?.currentLegProgress.currentStep.maneuverType.rawValue
         let enabled = guidanceEnabled && installedRouteRevision == routeRevision && isOnPlannedRoute != false
         let roadName = currentRoadName ?? progress?.currentLegProgress.currentStep.names?.joined(separator: " ")
-        let message = plannedGuidanceMessage(status: guidanceStatus, enabled: enabled, onRoute: isOnPlannedRoute)
+        let message = plannedGuidanceMessage(status: guidanceStatus, enabled: enabled, onRoute: isOnPlannedRoute, locale: currentLocale)
         let suppressed = !enabled || isArtificialArrival(finalChunk: finalRouteChunk, instructionType: instructionType)
         let synthesizer = ExpoMapboxNavigationViewController.navigationProvider.routeVoiceController.speechSynthesizer
         if !guidanceWasSuppressed { requestedMute = synthesizer.muted }
@@ -78,7 +84,7 @@ extension ExpoMapboxNavigationViewController {
                 showsNativeInstruction = true
                 guidanceStatusBanner.show(nil)
             } else {
-                guidanceStatusBanner.showContinuation(roadName: roadName)
+                guidanceStatusBanner.showContinuation(roadName: roadName, locale: currentLocale)
             }
         }
         navigationViewController?.navigationView.topBannerContainerView.isHidden = !showsNativeInstruction
