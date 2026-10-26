@@ -2,12 +2,18 @@ import ExpoModulesCore
 import CoreLocation
 
 public class ExpoMapboxNavigationModule: Module {
+  private let alertSound = NavigationAlertSound()
 
   public func definition() -> ModuleDefinition {
     Name("ExpoMapboxNavigation")
 
+    AsyncFunction("playAlertSound") { (soundName: String) in
+      try self.alertSound.play(soundName)
+    }.runOnQueue(.main)
+    OnDestroy { self.alertSound.stop() }
+
     View(ExpoMapboxNavigationView.self) {
-      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad", "onMarkerPress", "onPlannedRouteLocation")
+      Events("onRouteProgressChanged", "onCancelNavigation", "onWaypointArrival", "onFinalDestinationArrival", "onRouteChanged", "onUserOffRoute", "onRoutesLoaded", "onRouteFailedToLoad", "onMarkerPress", "onPlannedRouteLocation", "onSpeedLimitChanged")
 
       Prop("routeMode") { (view: ExpoMapboxNavigationView, value: String?) in view.controller.setRouteMode(value) }
       Prop("reroutingEnabled") { (view: ExpoMapboxNavigationView, value: Bool?) in view.controller.setReroutingEnabled(value) }

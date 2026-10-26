@@ -43,6 +43,13 @@ extension ExpoMapboxNavigationViewController {
         lastSpeedValue = speed
         lastSpeedUnit = inUS ? "mph" : "km/h"
         refreshSpeedLimit()
+        onEvent?("onSpeedLimitChanged", [
+            "speedLimit": speed.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }.map { $0 as Any } ?? NSNull(),
+            "unit": lastSpeedUnit,
+            "latitude": coordinate.latitude,
+            "longitude": coordinate.longitude,
+            "timestamp": Date().timeIntervalSince1970 * 1000
+        ])
     }
 
     func refreshSpeedLimit() {

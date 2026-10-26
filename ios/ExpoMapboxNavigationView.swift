@@ -7,6 +7,7 @@ import Combine
 
 class ExpoMapboxNavigationView: ExpoView {
     private let onRouteProgressChanged = EventDispatcher()
+    private let onSpeedLimitChanged = EventDispatcher()
     private let onCancelNavigation = EventDispatcher()
     private let onWaypointArrival = EventDispatcher()
     private let onFinalDestinationArrival = EventDispatcher()
@@ -33,6 +34,8 @@ class ExpoMapboxNavigationView: ExpoView {
         controller.onEvent = { [weak self] eventName, payload in
             guard let self = self else { return }
             switch eventName {
+            case "onSpeedLimitChanged":
+                self.onSpeedLimitChanged(payload)
             case "onRouteProgressChanged":
                 self.onRouteProgressChanged(payload)
             case "onCancelNavigation":

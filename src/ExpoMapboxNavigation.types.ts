@@ -3,6 +3,12 @@ import { ViewStyle, StyleProp } from "react-native/types";
 import { Ref } from "react";
 
 export type Coordinate = { latitude: number; longitude: number };
+/** Posted limit for the current matched road; never the vehicle's speed. */
+export type SpeedLimitEvent = Coordinate & {
+  speedLimit: number | null;
+  unit: "km/h" | "mph";
+  timestamp: number;
+};
 export type GuidanceState = "preparing" | "available" | "unavailable";
 export type PlannedGuidanceStatus = GuidanceState | "off-route";
 export type ProgressEvent = {
@@ -77,6 +83,7 @@ export type ExpoMapboxNavigationViewRef = {
 };
 
 export type ExpoMapboxNavigationViewProps = {
+  onSpeedLimitChanged?: (event: { nativeEvent: SpeedLimitEvent }) => void;
   ref?: Ref<ExpoMapboxNavigationViewRef>;
   coordinates: Coordinate[];
   routeMode?: "calculated" | "planned";

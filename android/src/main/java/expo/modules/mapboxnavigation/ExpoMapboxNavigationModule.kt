@@ -11,9 +11,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class ExpoMapboxNavigationModule : Module() {
+  private val alertSound = NavigationAlertSound()
   @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
   override fun definition() = ModuleDefinition {
     Name("ExpoMapboxNavigation")
+
+    AsyncFunction("playAlertSound") { soundName: String ->
+      val context = appContext.reactContext ?: error("React context unavailable")
+      alertSound.play(context, soundName)
+    }.runOnQueue(expo.modules.kotlin.functions.Queues.MAIN)
+    OnDestroy { alertSound.stop() }
 
     OnActivityEntersForeground {
       val currentActivity = appContext.activityProvider?.currentActivity ?: return@OnActivityEntersForeground
@@ -40,7 +47,8 @@ class ExpoMapboxNavigationModule : Module() {
               "onRoutesLoaded",
               "onRouteFailedToLoad",
               "onMarkerPress",
-              "onPlannedRouteLocation"
+              "onPlannedRouteLocation",
+              "onSpeedLimitChanged"
       )
 
       Prop("routeMode") { view: ExpoMapboxNavigationView, value: String? -> view.setRouteMode(value) }

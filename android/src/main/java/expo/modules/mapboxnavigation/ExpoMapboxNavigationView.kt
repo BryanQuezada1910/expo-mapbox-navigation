@@ -175,6 +175,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var pointAnnotationManager: PointAnnotationManager? = null
 
     private val onRouteProgressChanged by EventDispatcher()
+    private val onSpeedLimitChanged by EventDispatcher()
     private val onCancelNavigation by EventDispatcher()
     private val onWaypointArrival by EventDispatcher()
     private val onFinalDestinationArrival by EventDispatcher()
@@ -628,6 +629,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             lastSpeedFailed = true
         }
         refreshSpeedLimit()
+        onSpeedLimitChanged(mapOf(
+            "speedLimit" to lastSpeedValue?.takeIf { it.isFinite() && it > 0 },
+            "unit" to lastSpeedUnit,
+            "latitude" to location.latitude,
+            "longitude" to location.longitude,
+            "timestamp" to System.currentTimeMillis().toDouble()
+        ))
     }
 
     private fun refreshSpeedLimit() {
