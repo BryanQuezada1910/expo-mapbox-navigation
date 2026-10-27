@@ -175,7 +175,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var pointAnnotationManager: PointAnnotationManager? = null
 
     private val onRouteProgressChanged by EventDispatcher()
-    private val onSpeedLimitChanged by EventDispatcher()
+    private val onSpeedLimitChanged by EventDispatcher<Map<String, Any?>>()
     private val onCancelNavigation by EventDispatcher()
     private val onWaypointArrival by EventDispatcher()
     private val onFinalDestinationArrival by EventDispatcher()
