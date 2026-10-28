@@ -11,10 +11,6 @@ fun main(args: Array<String>) {
         val locale = navigationLocale(item["locale"].takeUnless { it.isJsonNull }?.asString, navigationLocale(item["systemLocale"].asString))
         val expected = catalog[item["language"].asString].asJsonObject
         val strings = NavigationStrings(locale)
-        check(plannedGuidanceMessage("preparing", false, locale = locale) == expected["preparingInstructions"].asString)
-        check(plannedGuidanceMessage("off-route", false, false, locale) == expected["offPlannedRoute"].asString)
-        check(plannedContinuationInstruction("N Interstate 35", locale) == expected["continueOnRoad"].asString.replace("{roadName}", "N Interstate 35"))
-        check(plannedContinuationInstruction(null, locale) == expected["continueOnRoute"].asString)
         check(SpeedLimitPresentation.from(null, "mph", locale = locale).text == expected["speedNoData"].asString)
         check(SpeedLimitPresentation.from(null, "mph", true, locale).text == expected["speedDataError"].asString)
         check(SpeedLimitPresentation.from(70.0, "mph", locale = locale).description == expected["speedLimitDescription"].asString.replace("{speed}", "70").replace("{unit}", "mph"))

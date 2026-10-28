@@ -1,10 +1,5 @@
 {
   "es": {
-    "preparingInstructions": "Preparando indicaciones",
-    "instructionsUnavailable": "Indicaciones no disponibles",
-    "offPlannedRoute": "Fuera de la ruta planificada",
-    "continueOnRoad": "Continúa por {roadName}",
-    "continueOnRoute": "Continúa por la ruta marcada",
     "speedDataError": "Error de\ndatos",
     "speedUnavailableDescription": "No se pudo obtener el límite de velocidad",
     "speedLimitDescription": "Límite de velocidad: {speed} {unit}",
@@ -25,11 +20,6 @@
     "webUnsupported": "La navegación de Mapbox no está disponible en la web"
   },
   "en": {
-    "preparingInstructions": "Preparing directions",
-    "instructionsUnavailable": "Directions unavailable",
-    "offPlannedRoute": "Outside the planned route",
-    "continueOnRoad": "Continue on {roadName}",
-    "continueOnRoute": "Continue along the marked route",
     "speedDataError": "Data\nerror",
     "speedUnavailableDescription": "Could not retrieve the speed limit",
     "speedLimitDescription": "Speed limit: {speed} {unit}",

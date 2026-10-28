@@ -5,11 +5,6 @@ import java.util.Locale
 
 internal class NavigationStrings(locale: Locale = Locale("es")) {
     private val english = locale.language.lowercase(Locale.ROOT) == "en"
-    val preparingInstructions: String get() = (if (english) "Preparing directions" else "Preparando indicaciones")
-    val instructionsUnavailable: String get() = (if (english) "Directions unavailable" else "Indicaciones no disponibles")
-    val offPlannedRoute: String get() = (if (english) "Outside the planned route" else "Fuera de la ruta planificada")
-    fun continueOnRoad(roadName: String): String = (if (english) "Continue on {roadName}" else "Continúa por {roadName}").replace("{roadName}", roadName)
-    val continueOnRoute: String get() = (if (english) "Continue along the marked route" else "Continúa por la ruta marcada")
     val speedDataError: String get() = (if (english) "Data\nerror" else "Error de\ndatos")
     val speedUnavailableDescription: String get() = (if (english) "Could not retrieve the speed limit" else "No se pudo obtener el límite de velocidad")
     fun speedLimitDescription(speed: String, unit: String): String = (if (english) "Speed limit: {speed} {unit}" else "Límite de velocidad: {speed} {unit}").replace("{speed}", speed).replace("{unit}", unit)

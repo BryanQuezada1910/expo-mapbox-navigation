@@ -1,17 +1,23 @@
 {
   "guidance": [
-    {"name": "preparing", "status": "preparing", "enabled": false, "finalChunk": false, "instructionType": null, "message": "Preparando indicaciones", "artificialArrival": false},
-    {"name": "no matching route", "status": "unavailable", "enabled": false, "finalChunk": false, "instructionType": null, "message": "Indicaciones no disponibles", "artificialArrival": false},
-    {"name": "off route", "status": "off-route", "enabled": false, "finalChunk": false, "instructionType": "turn", "message": "Fuera de la ruta planificada", "artificialArrival": false},
-    {"name": "valid turn before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "turn", "message": null, "artificialArrival": false},
-    {"name": "depart before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "depart", "message": null, "artificialArrival": false},
-    {"name": "artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "arrive", "message": null, "artificialArrival": true},
-    {"name": "real final arrival", "status": "available", "enabled": true, "finalChunk": true, "instructionType": "arrive", "message": null, "artificialArrival": false},
-    {"name": "old revision cannot show a turn", "status": "available", "enabled": false, "finalChunk": true, "instructionType": "turn", "message": "Preparando indicaciones", "artificialArrival": false},
-    {"name": "on route while loading next window", "status": "preparing", "onRoute": true, "enabled": false, "finalChunk": false, "instructionType": null, "message": null, "artificialArrival": false},
-    {"name": "on route while matching retries", "status": "unavailable", "onRoute": true, "enabled": false, "finalChunk": false, "instructionType": null, "message": null, "artificialArrival": false},
-    {"name": "off route while matching retries", "status": "unavailable", "onRoute": false, "enabled": false, "finalChunk": false, "instructionType": null, "message": "Fuera de la ruta planificada", "artificialArrival": false},
-    {"name": "off route while loading next window", "status": "preparing", "onRoute": false, "enabled": false, "finalChunk": false, "instructionType": null, "message": "Fuera de la ruta planificada", "artificialArrival": false}
+    {"name": "preparing", "status": "preparing", "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": null, "hasInstruction": false, "showNative": false},
+    {"name": "no matching route", "status": "unavailable", "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": null, "hasInstruction": false, "showNative": false},
+    {"name": "off route", "status": "off-route", "enabled": false, "finalChunk": false, "instructionType": "turn", "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": null, "hasInstruction": true, "showNative": false},
+    {"name": "valid turn before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "turn", "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": true, "hasInstruction": true, "showNative": true},
+    {"name": "depart before artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "depart", "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": true, "hasInstruction": true, "showNative": true},
+    {"name": "artificial arrival", "status": "available", "enabled": true, "finalChunk": false, "instructionType": "arrive", "artificialArrival": true, "planned": true, "revisionMatches": true, "onRoute": true, "hasInstruction": true, "showNative": false},
+    {"name": "real final arrival", "status": "available", "enabled": true, "finalChunk": true, "instructionType": "arrive", "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": true, "hasInstruction": true, "showNative": true},
+    {"name": "old revision cannot show a turn", "status": "available", "enabled": false, "finalChunk": true, "instructionType": "turn", "artificialArrival": false, "planned": true, "revisionMatches": true, "onRoute": null, "hasInstruction": true, "showNative": false},
+    {"name": "on route while loading next window", "status": "preparing", "onRoute": true, "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "hasInstruction": false, "showNative": false},
+    {"name": "on route while matching retries", "status": "unavailable", "onRoute": true, "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "hasInstruction": false, "showNative": false},
+    {"name": "off route while matching retries", "status": "unavailable", "onRoute": false, "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "hasInstruction": false, "showNative": false},
+    {"name": "off route while loading next window", "status": "preparing", "onRoute": false, "enabled": false, "finalChunk": false, "instructionType": null, "artificialArrival": false, "planned": true, "revisionMatches": true, "hasInstruction": false, "showNative": false},
+    {"name": "matched route without a visual instruction", "planned": true, "enabled": true, "revisionMatches": true, "onRoute": true, "finalChunk": true, "instructionType": null, "hasInstruction": false, "showNative": false, "artificialArrival": false},
+    {"name": "revision mismatch hides a cached turn", "planned": true, "enabled": true, "revisionMatches": false, "onRoute": true, "finalChunk": true, "instructionType": "turn", "hasInstruction": true, "showNative": false, "artificialArrival": false},
+    {"name": "rejoining restores a cached turn", "planned": true, "enabled": true, "revisionMatches": true, "onRoute": true, "finalChunk": false, "instructionType": "turn", "hasInstruction": true, "showNative": true, "artificialArrival": false},
+    {"name": "unknown GPS cannot show a planned turn", "planned": true, "enabled": true, "revisionMatches": true, "onRoute": null, "finalChunk": true, "instructionType": "turn", "hasInstruction": true, "showNative": false, "artificialArrival": false},
+    {"name": "calculated route uses SDK instructions", "planned": false, "enabled": false, "revisionMatches": false, "onRoute": null, "finalChunk": true, "instructionType": "turn", "hasInstruction": true, "showNative": true, "artificialArrival": false},
+    {"name": "calculated route without instructions stays hidden", "planned": false, "enabled": false, "revisionMatches": false, "onRoute": null, "finalChunk": true, "instructionType": null, "hasInstruction": false, "showNative": false, "artificialArrival": false}
   ],
   "speedLimits": [
     {"name": "metric", "speed": 80, "unit": "km/h", "failed": false, "text": "80\nkm/h", "available": true},
@@ -21,11 +27,5 @@
     {"name": "zero is not a speed limit", "speed": 0, "unit": "km/h", "failed": false, "text": "Sin\ndatos", "available": false},
     {"name": "invalid negative", "speed": -1, "unit": "mph", "failed": false, "text": "Sin\ndatos", "available": false},
     {"name": "failed update clears old speed", "speed": 80, "unit": "km/h", "failed": true, "text": "Error de\ndatos", "available": false}
-  ],
-  "continuations": [
-    {"roadName": "N Interstate 35", "text": "Continúa por N Interstate 35"},
-    {"roadName": "  Carretera México 57  ", "text": "Continúa por Carretera México 57"},
-    {"roadName": null, "text": "Continúa por la ruta marcada"},
-    {"roadName": "  ", "text": "Continúa por la ruta marcada"}
   ]
 }

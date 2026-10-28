@@ -3,25 +3,20 @@ package expo.modules.mapboxnavigation
 import kotlin.math.roundToInt
 import java.util.Locale
 
-internal fun plannedGuidanceMessage(
-    status: String,
-    enabled: Boolean,
-    onRoute: Boolean? = null,
-    locale: Locale = Locale("es")
-): String? = when {
-    onRoute == false || status == "off-route" -> NavigationStrings(locale).offPlannedRoute
-    onRoute == true -> null
-    status == "unavailable" -> NavigationStrings(locale).instructionsUnavailable
-    !enabled -> NavigationStrings(locale).preparingInstructions
-    else -> null
-}
-
 internal fun isArtificialArrival(finalChunk: Boolean, instructionType: String?): Boolean =
     !finalChunk && instructionType == "arrive"
 
-internal fun plannedContinuationInstruction(roadName: String?, locale: Locale = Locale("es")): String =
-    roadName?.trim()?.takeIf { it.isNotEmpty() }?.let { NavigationStrings(locale).continueOnRoad(it) }
-        ?: NavigationStrings(locale).continueOnRoute
+internal fun canPresentNativeManeuver(
+    planned: Boolean,
+    enabled: Boolean,
+    revisionMatches: Boolean,
+    onRoute: Boolean?,
+    finalChunk: Boolean,
+    instructionType: String?,
+    hasInstruction: Boolean
+): Boolean = hasInstruction && (!planned || (
+    enabled && revisionMatches && onRoute == true && !isArtificialArrival(finalChunk, instructionType)
+))
 
 internal data class SpeedLimitPresentation(val text: String, val description: String, val available: Boolean) {
     companion object {

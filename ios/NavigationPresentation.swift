@@ -1,24 +1,16 @@
 import Foundation
 
-func plannedGuidanceMessage(status: String, enabled: Bool, onRoute: Bool? = nil, locale: Locale = Locale(identifier: "es")) -> String? {
-    let strings = NavigationStrings(locale: locale)
-    if onRoute == false || status == "off-route" { return strings.offPlannedRoute }
-    if onRoute == true { return nil }
-    if status == "unavailable" { return strings.instructionsUnavailable }
-    if !enabled { return strings.preparingInstructions }
-    return nil
-}
-
 func isArtificialArrival(finalChunk: Bool, instructionType: String?) -> Bool {
     !finalChunk && instructionType == "arrive"
 }
 
-func plannedContinuationInstruction(roadName: String?, locale: Locale = Locale(identifier: "es")) -> String {
-    let strings = NavigationStrings(locale: locale)
-    guard let name = roadName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
-        return strings.continueOnRoute
-    }
-    return strings.continueOnRoad(roadName: name)
+func canPresentNativeManeuver(
+    planned: Bool, enabled: Bool, revisionMatches: Bool, onRoute: Bool?,
+    finalChunk: Bool, instructionType: String?, hasInstruction: Bool
+) -> Bool {
+    hasInstruction && (!planned || (
+        enabled && revisionMatches && onRoute == true && !isArtificialArrival(finalChunk: finalChunk, instructionType: instructionType)
+    ))
 }
 
 struct SpeedLimitPresentation {

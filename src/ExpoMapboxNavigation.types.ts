@@ -91,8 +91,8 @@ export type ExpoMapboxNavigationViewProps = {
   routeDeviationTolerance?: number;
   plannedRouteDistance?: number;
   plannedRouteDuration?: number;
-  /** Presentation availability, including continuation/off-route instructions.
-   * Matching failures can still include errorMessage while guidance is available.
+  /** Matching availability for native guidance on the original trace.
+   * Preparing, off-route and unavailable states leave the maneuver area empty.
    */
   onGuidanceStateChanged?: (event: {
     nativeEvent: { state: GuidanceState; errorMessage?: string };

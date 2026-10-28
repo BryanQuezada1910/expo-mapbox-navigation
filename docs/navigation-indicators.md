@@ -7,39 +7,40 @@ replace its Kotlin or Swift code.
 
 ## Instructions
 
-The old planned-route policy hid the entire banner when either the current step
-or the upcoming step was an arrival. A window with only a departure and an
-artificial arrival could therefore hide instructions throughout that window.
-The policy now examines the current visual instruction first. A later arrival
-does not hide a valid turn. An arrival instruction for an intermediate window is
-replaced by a continuation instruction, such as “Continúa por N Interstate 35”,
-using the current matched road name or the current SDK step's road name. The
-continuation has a forward icon and no artificial arrival distance. If the road
-name is unknown, it says “Continúa por la ruta marcada” without inventing a turn.
-The final destination still uses the SDK's arrival instruction.
+Both platforms use only the original Mapbox maneuver component: Android's
+`MapboxManeuverView` and iOS's `InstructionsBannerView`. If the SDK cannot provide
+an instruction, the maneuver area is hidden. Custom continuation, preparing,
+unavailable and off-route banners have been removed. The host application must
+also avoid drawing a replacement banner over the navigation map.
 
-The wrapper supplies the internal `guidanceStatus` bridge prop. The native banner
-shows “Preparando indicaciones” or “Indicaciones no disponibles” before GPS can
-be classified against the route. The internal `isOnPlannedRoute` prop distinguishes
-unknown GPS from an on-route or off-route location. On route, a continuation stays
-visible while a new matching window loads, retries or has no renderable maneuver.
-Off route, “Fuera de la ruta planificada” takes precedence over loading and errors.
-It restores the current instruction on rejoining, without requiring another route
-request or a new instruction event.
-Android now constrains the banner to the available width and continues updating
-the camera and progress when instructions are suppressed.
+Planned guidance requires an accepted match for the current revision and a GPS
+position on the original trace. An intermediate window's artificial arrival is
+hidden; a valid turn before that arrival remains visible, and the real final
+arrival continues to use the SDK component. On rejoining, the current SDK
+instruction is rendered again without waiting for another instruction event.
+Camera, route progress, speed-limit updates and off-route events continue while
+the maneuver area is hidden.
+
+Android enables `ExpoView.shouldUseAndroidLayout` so native changes to maneuver
+visibility and height trigger measure/layout outside React Native's Yoga tree.
+Without this, an instruction that became visible after initial layout could
+remain at zero height. Both native route controllers deliver each active revision
+only once: unrelated prop updates and prefetch changes reuse the guide instead
+of reinstalling it and resetting its progress. A new revision or a reset still
+installs normally. iOS also attaches the navigation child controller only once,
+avoiding repeated containment and constraints across matching windows.
 
 The original geometry, deviation validation, route windows, retry policy and
 disabled rerouting remain authoritative. These changes do not synthesize turns
 when Map Matching cannot provide a valid guide.
 
-`onGuidanceStateChanged.state` describes the visible guidance. Once valid GPS
-has been classified against a valid trace, it remains `available` because native
-UI can show a maneuver, continuation or off-route message. Consumers must not
-cover that UI with a loading overlay for internal matching-window changes.
-Matching failures still populate `errorMessage`, and the internal retry state
-continues independently. Before GPS is available, `preparing` and `unavailable`
-retain their previous meaning.
+`onGuidanceStateChanged.state` describes readiness for native guidance. It becomes
+`available` only after the current match is accepted and GPS is on the original
+trace. GPS classification alone no longer reports available instructions.
+While loading or retrying a window it reports `preparing` or `unavailable`;
+off-route positions report `unavailable`. Matching failures still include
+`errorMessage`. The SDK can still lack a visual maneuver even with an accepted
+match; in that case the original component stays hidden.
 
 ## Overview and following camera
 
@@ -83,7 +84,8 @@ and [Map Matching parameters](https://docs.mapbox.com/api/navigation/map-matchin
 Use a new native build to check a planned route with a turn inside a window,
 an intermediate window boundary, departure/rejoin, a rejected matching response,
 a road without speed metadata and a road with a known posted limit. On a long
-straight road, confirm the continuation instruction stays visible between windows.
+straight road, confirm that only valid SDK maneuvers appear; gaps between
+windows must remain empty, with no continuation or status replacement.
 In overview, confirm the start, finish and intermediate detours of the entire
 trace fit on screen, including after a matching-window change and rotation.
 Check that only one camera action is visible in following, overview and manual

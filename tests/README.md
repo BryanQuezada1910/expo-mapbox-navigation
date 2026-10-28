@@ -47,15 +47,12 @@ responses, location, and voice remains separate from these deterministic tests.
 ## Navigation indicator regression tests
 
 `navigationPresentationCases.json` is shared by Kotlin and Swift. It covers
-preparing/unavailable/off-route instructions, turns before an artificial arrival,
-intermediate versus final arrivals, on-route continuity during matching-window
-loading/retries, road-name continuation instructions, numeric limits, missing
-limits and errors.
-Both harnesses also reject nonfinite speed values. The JavaScript suite above
-checks the bridge status through route loads, window changes, failures, retries,
-departure and rejoining without another route request.
-It also verifies that matching retries keep running while visible guidance stays
-available and that off-route status takes precedence over a failed match.
+native maneuver visibility during preparing/unavailable/off-route states, turns
+before an artificial arrival, intermediate versus final arrivals, revision
+mismatches, missing instructions, rejoining, calculated routes and speed metadata.
+Both harnesses also reject nonfinite speed values. The JavaScript suite checks
+that GPS alone does not report ready guidance and that matching retries continue
+while the maneuver area is hidden.
 
 ```sh
 kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationStrings.kt android/src/main/java/expo/modules/mapboxnavigation/NavigationPresentation.kt tests/navigationPresentation.test.kt -classpath "$GSON_JAR" -include-runtime -d /tmp/navigation-presentation-tests.jar
@@ -106,3 +103,15 @@ The bundle harness switches actual temporary Mapbox resource bundles between
 Spanish and English while checking that a host-app bundle and `AppleLanguages`
 remain unchanged. Native UI layout, generated Mapbox turns and speech still
 require verification in a fresh device build.
+
+## Active route installation regression
+
+The JVM harness compiles the production `PlannedRouteController` and geometry
+validator with recording SDK doubles. It covers repeated prop updates,
+prefetch promotion while pending, new revisions, failures/retries, resets and
+late callbacks. These doubles are only used by this standalone harness.
+
+```sh
+kotlinc android/src/main/java/expo/modules/mapboxnavigation/NavigationLocale.kt android/src/main/java/expo/modules/mapboxnavigation/NavigationStrings.kt android/src/main/java/expo/modules/mapboxnavigation/PlannedRouteGeometry.kt android/src/main/java/expo/modules/mapboxnavigation/PlannedRouteController.kt tests/planned-route-controller/*.kt tests/plannedRouteController.test.kt -classpath "$MAPBOX_GEOJSON_JAR:$GSON_JAR" -include-runtime -d /tmp/planned-controller-tests.jar
+java -cp "/tmp/planned-controller-tests.jar:$MAPBOX_GEOJSON_JAR:$GSON_JAR" expo.modules.mapboxnavigation.PlannedRouteController_testKt
+```

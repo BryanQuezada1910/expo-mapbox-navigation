@@ -42,6 +42,7 @@ export function usePlannedRoute(
   const [onRoute, setOnRoute] = useState(false);
   const [hasRouteLocation, setHasRouteLocation] = useState(false);
   const progressRef = useRef<number | undefined>(undefined);
+  const routeLocationRef = useRef<{ identity: string; inside?: boolean }>({ identity });
   const [progress, setProgress] = useState<ProgressEvent>({
     distanceRemaining: 0,
     distanceTraveled: 0,
@@ -65,9 +66,10 @@ export function usePlannedRoute(
     },
     []
   );
-  // Once GPS is known, native guidance can show a maneuver, continuation or
-  // off-route instruction even while the next matching window is loading.
-  const presentedState = planned && valid && hasRouteLocation ? "available" : state;
+  // GPS classification alone does not mean the SDK has a guide to present.
+  const presentedState: GuidanceState = !valid || (hasRouteLocation && !onRoute) || state === "unavailable"
+    ? "unavailable"
+    : hasRouteLocation && onRoute && readyRevision === revision ? "available" : "preparing";
   useEffect(() => {
     if (planned) props.onGuidanceStateChanged?.({ nativeEvent: { state: presentedState, errorMessage: guidanceError } });
   }, [planned, presentedState, guidanceError, props.onGuidanceStateChanged]);
@@ -86,6 +88,7 @@ export function usePlannedRoute(
       fractionTraveled: 0,
     });
     progressRef.current = undefined;
+    routeLocationRef.current = { identity };
     notify(
       valid ? "preparing" : "unavailable",
       valid ? undefined : navigationStrings(props.locale).invalidRouteGeometry
@@ -113,6 +116,7 @@ export function usePlannedRoute(
   const onLocation = useCallback(
     (event: { nativeEvent: Coordinate }) => {
       if (!planned || !valid || !isValidCoordinate(event.nativeEvent)) return;
+      if (routeLocationRef.current.identity !== identity) return;
       const projection = projectLocation(
         props.coordinates,
         distances,
@@ -122,9 +126,14 @@ export function usePlannedRoute(
         progressRef.current
       );
       const inside = projection.offset <= tolerance;
+      const previousInside = routeLocationRef.current.inside;
+      routeLocationRef.current.inside = inside;
       setHasRouteLocation(true);
       setOnRoute(inside);
-      if (!inside) return;
+      if (!inside) {
+        if (previousInside !== false) props.onUserOffRoute?.();
+        return;
+      }
       progressRef.current = projection.distance;
       setChunkIndex(chunkForProjection(chunks, projection));
       const total = distances[distances.length - 1] || 0;
@@ -145,6 +154,7 @@ export function usePlannedRoute(
     [
       planned,
       valid,
+      identity,
       props.coordinates,
       distances,
       tolerance,
@@ -152,6 +162,7 @@ export function usePlannedRoute(
       props.plannedRouteDistance,
       props.plannedRouteDuration,
       props.onRouteProgressChanged,
+      props.onUserOffRoute,
     ]
   );
   const onLoaded: NonNullable<
@@ -223,5 +234,7 @@ export function usePlannedRoute(
         ? props.onFinalDestinationArrival
         : undefined,
     onRouteChanged: undefined,
+    // SDK deviations describe the matched window, not the original planned trace.
+    onUserOffRoute: undefined,
   };
 }

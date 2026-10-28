@@ -193,26 +193,26 @@ test('guidance follows original windows without replacing full geometry', () => 
   assert.equal(view.useRouteMatchingApi, true);
 });
 
-test('on-route instructions remain present while changing windows and retrying', () => {
+test('GPS alone cannot mark guidance available while changing windows or retrying', () => {
   const coordinates = points(201), harness = setupHook(coordinates);
   let view = harness.render();
   view.onPlannedRouteLocation({ nativeEvent: coordinates[10] });
   view = harness.render();
   assert.equal(view.isOnPlannedRoute, true);
-  assert.equal(harness.events.at(-1), 'available');
+  assert.equal(harness.events.at(-1), 'preparing');
   view.onRoutesLoaded({ nativeEvent: { routeRevision: view.routeRevision, routes: {} } });
   view = harness.render();
   view.onPlannedRouteLocation({ nativeEvent: coordinates[90] });
   view = harness.render();
   assert.equal(view.guidanceEnabled, false);
   assert.equal(view.isOnPlannedRoute, true);
-  assert.equal(harness.events.at(-1), 'available', 'a matching-window change must not cover native continuation guidance with a loading overlay');
+  assert.equal(harness.events.at(-1), 'preparing', 'a new window needs its own matching response');
   view.onRouteFailedToLoad({ nativeEvent: { routeRevision: view.routeRevision, errorMessage: 'NoMatch' } });
   view = harness.render();
   assert.equal(view.guidanceStatus, 'unavailable');
   assert.equal(view.isOnPlannedRoute, true);
-  assert.equal(harness.events.at(-1), 'available');
-  assert.equal(harness.timers.size, 1, 'matching still retries independently of visible guidance');
+  assert.equal(harness.events.at(-1), 'unavailable');
+  assert.equal(harness.timers.size, 1, 'matching still retries while no maneuver is shown');
   view.onPlannedRouteLocation({ nativeEvent: { latitude: 20, longitude: -100 } });
   view = harness.render();
   assert.equal(view.isOnPlannedRoute, false);
@@ -254,4 +254,44 @@ test('rejoining restores available instructions without requesting another route
   assert.equal(view.guidanceStatus, 'available');
   assert.equal(view.routeRevision, revision);
   assert.equal(view.guidanceEnabled, true);
+});
+
+test('planned off-route events follow the original trace once per excursion, including initial GPS', () => {
+  const coordinates = points(201), harness = setupHook(coordinates);
+  let deviations = 0;
+  harness.props.onUserOffRoute = () => { deviations++; };
+  let view = harness.render();
+  assert.equal(deviations, 0, 'preparing without GPS is not a deviation');
+  assert.equal(view.onUserOffRoute, undefined, 'native matching-window deviations are suppressed');
+  const outside = { nativeEvent: { latitude: 20, longitude: -100 } };
+  view.onPlannedRouteLocation({ nativeEvent: { latitude: NaN, longitude: -99 } });
+  assert.equal(deviations, 0);
+  view.onPlannedRouteLocation(outside);
+  view.onPlannedRouteLocation(outside);
+  view = harness.render();
+  assert.equal(deviations, 1);
+  view.onRouteFailedToLoad({ nativeEvent: { routeRevision: view.routeRevision, errorMessage: 'NoMatch' } });
+  harness.props.locale = 'en-US';
+  view = harness.render();
+  view.onPlannedRouteLocation(outside);
+  assert.equal(deviations, 1, 'matching failures and locale changes do not rearm an excursion');
+  view.onPlannedRouteLocation({ nativeEvent: coordinates[90] });
+  view = harness.render();
+  view.onPlannedRouteLocation(outside);
+  assert.equal(deviations, 2);
+  const old = view.onPlannedRouteLocation;
+  harness.props.coordinates = [{ latitude: 18, longitude: -98 }, { latitude: 18.001, longitude: -98 }];
+  view = harness.render();
+  old(outside);
+  assert.equal(deviations, 2, 'old trace callbacks cannot report for a new route');
+  view.onPlannedRouteLocation(outside);
+  assert.equal(deviations, 3);
+});
+
+test('calculated navigation preserves the native off-route callback', () => {
+  const harness = setupHook(points(2));
+  harness.props.routeMode = 'calculated';
+  const callback = () => {};
+  harness.props.onUserOffRoute = callback;
+  assert.equal(harness.render().onUserOffRoute, callback);
 });

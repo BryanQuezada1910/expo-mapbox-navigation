@@ -109,6 +109,9 @@ val PIXEL_DENSITY = Resources.getSystem().displayMetrics.density
 class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         ExpoView(context, appContext) {
 
+    // Maneuver visibility/height changes originate in the native SDK, outside Yoga.
+    override val shouldUseAndroidLayout = true
+
     // Set view tree lifecycle owner to the activity
     // Otherwise leads to crashes when mapbox package tries to query the view tree lifecycle
     // owner
@@ -129,7 +132,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var guidanceEnabled = false
     private var guidanceStatus = "preparing"
     private var isOnPlannedRoute: Boolean? = null
-    private var currentRoadName: String? = null
     private var latestRouteProgress: RouteProgress? = null
     private var finalRouteChunk = true
     private var suppressPlannedInstruction = false
@@ -384,7 +386,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 ) {}
                 override fun onFailure(reasons: List<RouterFailure>, routeOptions: RouteOptions) {
                     if (isAttachedToWindow && !plannedMode) {
-                        maneuverView.showStatus(strings.instructionsUnavailable)
+                        maneuverView.hide()
                         onRouteFailedToLoad(mapOf("errorMessage" to (reasons.firstOrNull()?.message ?: strings.routeLoadFailed)))
                     }
                 }
@@ -507,7 +509,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 ) {
                     // Speed metadata describes the current road, independently of route guidance.
                     updateSpeedLimit(locationMatcherResult)
-                    currentRoadName = locationMatcherResult.road.components.map { it.text }.filter { it.isNotBlank() }.joinToString(" ").ifBlank { null }
                     if (plannedMode) refreshInstructions()
                     if (plannedMode) return
                     // Update puck location with enhanced (map-matched) location
@@ -602,17 +603,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         // Only suppress the instruction being displayed, not an upcoming step's arrival.
         val instructionType = progress?.bannerInstructions?.primary()?.type()
             ?: progress?.currentLegProgress?.currentStepProgress?.step?.maneuver()?.type()
-        val enabled = guidanceEnabled && installedRouteRevision == routeRevision && isOnPlannedRoute != false
-        val roadName = currentRoadName ?: progress?.currentLegProgress?.currentStepProgress?.step?.name()
-        val status = if (plannedMode) plannedGuidanceMessage(guidanceStatus, enabled, isOnPlannedRoute, currentLocale) else null
-        suppressPlannedInstruction = plannedMode && (!enabled || isArtificialArrival(finalRouteChunk, instructionType))
+        val canPresent = canPresentNativeManeuver(
+            plannedMode, guidanceEnabled && guidanceStatus == "available", installedRouteRevision == routeRevision,
+            isOnPlannedRoute, finalRouteChunk, instructionType, progress != null
+        )
+        suppressPlannedInstruction = plannedMode && !canPresent
         if (suppressPlannedInstruction) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
-        when {
-            status != null -> maneuverView.showStatus(status)
-            plannedMode && (!enabled || progress == null || isArtificialArrival(finalRouteChunk, instructionType)) -> maneuverView.showContinuation(roadName)
-            progress == null -> maneuverView.showStatus(strings.preparingInstructions)
-            else -> maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode, roadName)
-        }
+        if (canPresent && progress != null) maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode)
+        else maneuverView.hide()
     }
 
     private fun updateSpeedLimit(result: LocationMatcherResult) {
@@ -1140,7 +1138,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             e.printStackTrace()
         }
 
-        maneuverView.setLocale(currentLocale)
         refreshInstructions()
         refreshSpeedLimit()
         refreshControlLabels()

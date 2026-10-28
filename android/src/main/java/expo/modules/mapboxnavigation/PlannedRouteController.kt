@@ -18,9 +18,11 @@ internal class PlannedRouteController(
     private val requests = mutableMapOf<List<Point>, Long>()
     private var generation = 0
     private var activeRevision = ""
+    private var deliveredRevision: String? = null
     private var activePoints = emptyList<Point>()
     fun reset() {
         generation++
+        deliveredRevision = null
         requests.values.forEach { navigation()?.cancelMapMatchingRequest(it) }
         requests.clear(); cache.clear(); pending.clear()
     }
@@ -34,7 +36,7 @@ internal class PlannedRouteController(
         val locale = navigationLocale(language)
         val strings = NavigationStrings(locale)
         val snapshot = points.toList()
-        cache[snapshot]?.let { if (!prefetch && revision == activeRevision) ready(it, revision); return }
+        cache[snapshot]?.let { if (!prefetch && revision == activeRevision) deliver(it); return }
         if (snapshot.size !in 2..100) {
             if (!prefetch) failed(strings.invalidRouteChunk, revision)
             return
@@ -69,7 +71,7 @@ internal class PlannedRouteController(
                 }
                 cache[snapshot] = routes
                 while (cache.size > 3) cache.remove(cache.keys.first())
-                if (snapshot == activePoints) ready(routes, activeRevision)
+                if (snapshot == activePoints) deliver(routes)
             }
         })
         if (id != null) requests[snapshot] = id
@@ -77,5 +79,12 @@ internal class PlannedRouteController(
             pending.remove(snapshot)
             if (!prefetch) failed(strings.navigationUnavailable, revision)
         }
+    }
+
+    private fun deliver(routes: List<NavigationRoute>) {
+        // Prop updates and prefetch changes must not restart the active SDK route.
+        if (deliveredRevision == activeRevision) return
+        deliveredRevision = activeRevision
+        ready(routes, activeRevision)
     }
 }

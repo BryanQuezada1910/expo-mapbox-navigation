@@ -86,12 +86,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var guidanceEnabled = false
     var guidanceStatus = "preparing"
     var isOnPlannedRoute: Bool?
-    var currentRoadName: String?
     let cameraController = NavigationCameraController()
     var installedRouteRevision = ""
     var installedGuidanceRoute: Route?
     var latestGuidanceProgress: RouteProgress?
-    let guidanceStatusBanner = NavigationStatusBannerView()
     let speedLimitIndicator = SpeedLimitIndicatorView()
     var speedLimitTopConstraint: NSLayoutConstraint?
     var finalRouteChunk = true
@@ -165,7 +163,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         locationMatchingSubscription = navigation!.locationMatching.sink { [weak self] state in
             guard let self = self else { return }
             self.updateSpeedLimit(state)
-            self.currentRoadName = state.roadName?.text
             if self.plannedMode { self.refreshPlannedInstructions() }
             guard self.plannedMode else { return }
             let coordinate = state.location.coordinate
@@ -833,15 +830,18 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         navigationViewController.delegate = self
-        addChild(navigationViewController)
-        view.addSubview(navigationViewController.view)
-        navigationViewController.view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            navigationViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
-            navigationViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
-            navigationViewController.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
-            navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
-        ])
+        if navigationViewController.parent !== self {
+            addChild(navigationViewController)
+            view.addSubview(navigationViewController.view)
+            navigationViewController.view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                navigationViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 0),
+                navigationViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: 0),
+                navigationViewController.view.topAnchor.constraint(equalTo: view.topAnchor, constant: 0),
+                navigationViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0),
+            ])
+            navigationViewController.didMove(toParent: self)
+        }
 
         // Add bottom legend label if it doesn't exist
         if bottomLegendLabel == nil {
@@ -864,7 +864,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         updateTripProgressVisibility()
-        didMove(toParent: self)
         plannedFallbackMap?.removeFromSuperview()
         plannedFallbackMap = nil
         installNavigationIndicators()

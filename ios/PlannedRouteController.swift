@@ -12,11 +12,13 @@ final class PlannedRouteController {
     private var generation = 0
     private var activeKey = ""
     private var activeRevision = ""
+    private var deliveredRevision: String?
     init(provider: @escaping () -> RoutingProvider?, ready: @escaping (NavigationRoutes, String) -> Void, failed: @escaping (String, String) -> Void) {
         self.provider = provider; self.ready = ready; self.failed = failed
     }
     func reset() {
         generation += 1
+        deliveredRevision = nil
         tasks.values.forEach { $0.cancel() }
         tasks.removeAll(); cache.removeAll()
     }
@@ -31,7 +33,7 @@ final class PlannedRouteController {
     private func request(_ coordinates: [CLLocationCoordinate2D], tolerance: Double, locale: Locale) {
         let requestKey = key(coordinates)
         if let cached = cache[requestKey] {
-            if requestKey == activeKey { ready(cached, activeRevision) }
+            if requestKey == activeKey { deliver(cached) }
             return
         }
         guard tasks[requestKey] == nil else { return }
@@ -68,8 +70,15 @@ final class PlannedRouteController {
                 }
                 if self.cache.count >= 3, let old = self.cache.keys.first(where: { $0 != self.activeKey }) { self.cache.removeValue(forKey: old) }
                 self.cache[requestKey] = routes
-                if requestKey == self.activeKey { self.ready(routes, self.activeRevision) }
+                if requestKey == self.activeKey { self.deliver(routes) }
             }
         }
+    }
+
+    private func deliver(_ routes: NavigationRoutes) {
+        // Prop updates and prefetch changes must not restart active guidance.
+        guard deliveredRevision != activeRevision else { return }
+        deliveredRevision = activeRevision
+        ready(routes, activeRevision)
     }
 }

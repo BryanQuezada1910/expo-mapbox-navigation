@@ -200,7 +200,11 @@ Called when the route changes or reroutes
 
 #### `onUserOffRoute`
 
-Called when the user goes off route
+Called when the user goes off route. In planned mode this uses GPS projection
+against the complete original trace and `routeDeviationTolerance`, independently
+of Map Matching availability. It fires once on the first valid off-route location
+and again only after rejoining and leaving the trace. Native SDK deviations from
+internal matching windows are ignored in this mode.
 
 #### `onRoutesLoaded`
 

@@ -7,16 +7,14 @@ fun main(args: Array<String>) {
     val cases = JsonParser.parseString(File(args[0]).readText()).asJsonObject
     for (entry in cases.getAsJsonArray("guidance")) {
         val item = entry.asJsonObject
-        val message = plannedGuidanceMessage(
-            item["status"].asString, item["enabled"].asBoolean,
-            item.get("onRoute")?.takeUnless { it.isJsonNull }?.asBoolean
+        val visible = canPresentNativeManeuver(
+            item["planned"].asBoolean, item["enabled"].asBoolean, item["revisionMatches"].asBoolean,
+            item.get("onRoute")?.takeUnless { it.isJsonNull }?.asBoolean,
+            item["finalChunk"].asBoolean, item["instructionType"].takeUnless { it.isJsonNull }?.asString,
+            item["hasInstruction"].asBoolean
         )
-        check(message == item["message"].takeUnless { it.isJsonNull }?.asString) { item["name"].asString }
+        check(visible == item["showNative"].asBoolean) { item["name"].asString }
         check(isArtificialArrival(item["finalChunk"].asBoolean, item["instructionType"].takeUnless { it.isJsonNull }?.asString) == item["artificialArrival"].asBoolean) { item["name"].asString }
-    }
-    for (entry in cases.getAsJsonArray("continuations")) {
-        val item = entry.asJsonObject
-        check(plannedContinuationInstruction(item["roadName"].takeUnless { it.isJsonNull }?.asString) == item["text"].asString)
     }
     for (entry in cases.getAsJsonArray("speedLimits")) {
         val item = entry.asJsonObject
@@ -28,5 +26,5 @@ fun main(args: Array<String>) {
     }
     check(!SpeedLimitPresentation.from(Double.NaN, "km/h").available)
     check(!SpeedLimitPresentation.from(Double.POSITIVE_INFINITY, "km/h").available)
-    println("23 navigation presentation cases and nonfinite speed values passed")
+    println("25 navigation presentation cases and nonfinite speed values passed")
 }
