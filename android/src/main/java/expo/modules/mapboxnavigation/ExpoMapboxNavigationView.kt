@@ -109,6 +109,10 @@ val PIXEL_DENSITY = Resources.getSystem().displayMetrics.density
 class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         ExpoView(context, appContext) {
 
+    companion object {
+        private val attachedViews = java.util.concurrent.CopyOnWriteArraySet<ExpoMapboxNavigationView>()
+    }
+
     // Maneuver visibility/height changes originate in the native SDK, outside Yoga.
     override val shouldUseAndroidLayout = true
 
@@ -129,12 +133,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var routeRevision = ""
     private var installedRouteRevision = ""
     private var installedRouteGeometry: String? = null
+    private var installedNavigationRoute: NavigationRoute? = null
     private var guidanceEnabled = false
     private var guidanceStatus = "preparing"
     private var isOnPlannedRoute: Boolean? = null
     private var latestRouteProgress: RouteProgress? = null
+    private var currentRoadName: String? = null
+    private var lastKnownRoadName: String? = null
     private var finalRouteChunk = true
     private var suppressPlannedInstruction = false
+    private var hasReceivedRawLocation = false
+    private var hasReceivedLocationFix = false
     private var plannedCoordinates = emptyList<Point>()
     private var prefetchCoordinates = emptyList<Point>()
     private val updateHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -157,6 +166,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var currentLocale = Locale.getDefault()
     private val strings get() = NavigationStrings(currentLocale)
     private var lastSpeedValue: Double? = null
+    private var lastValidSpeedValue: Double? = null
     private var lastSpeedUnit = "km/h"
     private var lastSpeedFailed = false
     private var lastPlannedProgress: Map<String, Double>? = null
@@ -460,8 +470,22 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val routeProgressObserver =
             object : RouteProgressObserver {
                 override fun onRouteProgressChanged(routeProgress: RouteProgress) {
-                    if (plannedMode && (installedRouteRevision != routeRevision || routeProgress.navigationRoute.directionsRoute.geometry() != installedRouteGeometry)) return
+                    if (plannedMode && routeProgress.navigationRoute.directionsRoute.geometry() != installedRouteGeometry) return
                     latestRouteProgress = routeProgress
+                    val step = routeProgress.currentLegProgress?.currentStepProgress?.step
+                    val stepRoad = step?.ref()?.takeIf { it.isNotBlank() } ?: step?.name()?.takeIf { it.isNotBlank() }
+                    if (!stepRoad.isNullOrBlank()) {
+                        lastKnownRoadName = stepRoad
+                    }
+                    if (lastSpeedValue == null) {
+                        val annotatedSpeed = extractRouteAnnotatedSpeedLimit(lastSpeedUnit == "mph")
+                        if (annotatedSpeed != null) {
+                            lastSpeedValue = annotatedSpeed
+                            lastValidSpeedValue = annotatedSpeed
+                            lastSpeedFailed = false
+                            refreshSpeedLimit()
+                        }
+                    }
                     refreshInstructions()
                     // Handle viewport data source
                     viewportDataSource.onRouteProgressChanged(routeProgress)
@@ -507,23 +531,40 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 override fun onNewLocationMatcherResult(
                         locationMatcherResult: LocationMatcherResult
                 ) {
+                    hasReceivedLocationFix = true
+                    val roadLabel = locationMatcherResult.road.components
+                        .map { it.text.trim() }
+                        .firstOrNull { it.isNotEmpty() }
+                    currentRoadName = roadLabel
+                    if (!roadLabel.isNullOrEmpty()) {
+                        lastKnownRoadName = roadLabel
+                    }
                     // Speed metadata describes the current road, independently of route guidance.
                     updateSpeedLimit(locationMatcherResult)
-                    if (plannedMode) refreshInstructions()
-                    if (plannedMode) return
-                    // Update puck location with enhanced (map-matched) location
                     val enhancedLocation = locationMatcherResult.enhancedLocation
+                    if (plannedMode && !hasReceivedRawLocation) {
+                        onPlannedRouteLocation(
+                            mapOf(
+                                "latitude" to enhancedLocation.latitude,
+                                "longitude" to enhancedLocation.longitude
+                            )
+                        )
+                    }
+                    if (plannedMode) refreshInstructions()
+                    // Update puck location with enhanced (map-matched) location
                     navigationLocationProvider.changePosition(
                             location = enhancedLocation,
-                            keyPoints = locationMatcherResult.keyPoints,
+                            keyPoints = if (!plannedMode || isOnPlannedRoute != false) locationMatcherResult.keyPoints else emptyList(),
                     )
 
                     // Update viewport data source with enhanced location
                     viewportDataSource.onLocationChanged(enhancedLocation)
                     viewportDataSource.evaluate()
-
+                    cameraController.onLocationUpdated()
                 }
                 override fun onNewRawLocation(rawLocation: com.mapbox.common.location.Location) {
+                    hasReceivedRawLocation = true
+                    hasReceivedLocationFix = true
                     if (plannedMode) onPlannedRouteLocation(mapOf("latitude" to rawLocation.latitude, "longitude" to rawLocation.longitude))
                     // Also update from raw location as fallback
                     // (e.g. before trip session starts or when map matching is unavailable)
@@ -532,6 +573,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                     )
                     viewportDataSource.onLocationChanged(rawLocation)
                     viewportDataSource.evaluate()
+                    cameraController.onLocationUpdated()
                 }
             }
 
@@ -598,6 +640,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
     }
 
+    private fun resolveCurrentRoadName(): String? {
+        val step = latestRouteProgress?.currentLegProgress?.currentStepProgress?.step
+        return currentRoadName?.takeIf { it.isNotBlank() }
+            ?: step?.ref()?.takeIf { it.isNotBlank() }
+            ?: step?.name()?.takeIf { it.isNotBlank() }
+            ?: lastKnownRoadName?.takeIf { it.isNotBlank() }
+    }
+
     private fun refreshInstructions() {
         val progress = latestRouteProgress
         // Only suppress the instruction being displayed, not an upcoming step's arrival.
@@ -609,23 +659,99 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         )
         suppressPlannedInstruction = plannedMode && !canPresent
         if (suppressPlannedInstruction) { speechApi.cancel(); voiceInstructionsPlayer.clear() }
-        if (canPresent && progress != null) maneuverView.renderManeuvers(maneuverApi.getManeuvers(progress), plannedMode)
-        else maneuverView.hide()
+        val hasPlannedRoute = plannedCoordinates.size >= 2 || (currentCoordinates?.size ?: 0) >= 2
+        val continuationText = plannedContinuationInstruction(resolveCurrentRoadName(), currentLocale)
+        val stepDistanceRemaining = progress?.currentLegProgress?.currentStepProgress?.distanceRemaining?.toDouble()
+            ?: progress?.distanceRemaining?.toDouble()
+            ?: lastPlannedProgress?.get("distanceRemaining")
+        if (canPresent && progress != null) {
+            maneuverView.renderManeuvers(
+                maneuverApi.getManeuvers(progress),
+                plannedMode,
+                finalRouteChunk,
+                continuationText,
+                distanceFormatter,
+                stepDistanceRemaining
+            )
+        } else if (shouldPresentPlannedBanner(plannedMode, false, hasPlannedRoute)) {
+            if (progress != null) {
+                maneuverView.renderManeuvers(
+                    maneuverApi.getManeuvers(progress),
+                    plannedMode = true,
+                    finalChunk = finalRouteChunk,
+                    continuationText = continuationText,
+                    distanceFormatterOptions = distanceFormatter,
+                    distanceRemaining = stepDistanceRemaining
+                )
+            } else if (installedRouteRevision != routeRevision && maneuverView.renderCachedIfAvailable(true)) {
+                // Keep showing the last valid maneuver while the next route window is being matched.
+            } else {
+                maneuverView.renderContinuation(
+                    continuationText,
+                    distanceFormatter,
+                    stepDistanceRemaining
+                )
+            }
+        } else {
+            maneuverView.hide()
+        }
+    }
+
+    private fun convertMaxSpeed(maxSpeed: com.mapbox.api.directions.v5.models.MaxSpeed?, inUS: Boolean): Double? {
+        val rawSpeed = maxSpeed?.speed()?.toDouble()?.takeIf { it.isFinite() && it > 0 } ?: return null
+        val rawUnit = maxSpeed.unit()?.lowercase(Locale.ROOT) ?: "km/h"
+        return when {
+            inUS && rawUnit.contains("km") -> kotlin.math.round(rawSpeed * 0.621371)
+            !inUS && rawUnit.contains("mph") -> kotlin.math.round(rawSpeed / 0.621371)
+            else -> rawSpeed
+        }
+    }
+
+    private fun extractRouteAnnotatedSpeedLimit(inUS: Boolean): Double? {
+        val legProgress = latestRouteProgress?.currentLegProgress
+        val legAnnotations = legProgress?.routeLeg?.annotation()?.maxspeed()
+            ?: installedNavigationRoute?.directionsRoute?.legs()?.firstOrNull()?.annotation()?.maxspeed()
+        if (legAnnotations.isNullOrEmpty()) return null
+        val legIndex = (legProgress?.geometryIndex ?: 0).coerceIn(0, legAnnotations.lastIndex)
+        for (offset in 0..8) {
+            val forwardIdx = (legIndex + offset).coerceAtMost(legAnnotations.lastIndex)
+            convertMaxSpeed(legAnnotations.getOrNull(forwardIdx), inUS)?.let { return it }
+            val backwardIdx = (legIndex - offset).coerceAtLeast(0)
+            convertMaxSpeed(legAnnotations.getOrNull(backwardIdx), inUS)?.let { return it }
+        }
+        return null
     }
 
     private fun updateSpeedLimit(result: LocationMatcherResult) {
         val location = result.enhancedLocation
         val inUS = isUS(location.latitude, location.longitude)
-        lastSpeedUnit = if (inUS) "mph" else "km/h"
+        val nextUnit = if (inUS) "mph" else "km/h"
+        if (nextUnit != lastSpeedUnit) {
+            lastValidSpeedValue = null
+        }
+        lastSpeedUnit = nextUnit
+        var liveSpeed: Double? = null
         try {
             val info = speedInfoApi.updatePostedAndCurrentSpeed(result, if (inUS) imperialDistanceFormatter else metricDistanceFormatter)
-            lastSpeedValue = info?.postedSpeed?.toDouble()
+            liveSpeed = info?.postedSpeed?.toDouble()
             lastSpeedFailed = false
         } catch (error: Exception) {
             android.util.Log.w("Mapbox", "Could not update speed limit", error)
-            lastSpeedValue = null
+            liveSpeed = null
             lastSpeedFailed = true
         }
+        val annotatedSpeed = extractRouteAnnotatedSpeedLimit(inUS)
+        val resolvedSpeed = resolveEffectiveSpeedLimit(
+            liveSpeed = liveSpeed,
+            routeAnnotatedSpeed = annotatedSpeed,
+            lastValidSpeed = lastValidSpeedValue,
+            failed = lastSpeedFailed
+        )
+        if (resolvedSpeed != null && resolvedSpeed > 0) {
+            lastValidSpeedValue = resolvedSpeed
+            lastSpeedFailed = false
+        }
+        lastSpeedValue = resolvedSpeed
         refreshSpeedLimit()
         onSpeedLimitChanged(mapOf(
             "speedLimit" to lastSpeedValue?.takeIf { it.isFinite() && it > 0 },
@@ -968,9 +1094,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        attachedViews.add(this)
         cameraController.attach()
         refreshControlLabels()
         refreshSpeedLimit()
+        refreshInstructions()
         mapboxNavigation?.registerRoutesObserver(routesObserver)
         mapboxNavigation?.registerRouteProgressObserver(routeProgressObserver)
         mapboxNavigation?.registerLocationObserver(locationObserver)
@@ -979,10 +1107,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         mapboxNavigation?.registerOffRouteObserver(offRouteObserver)
         mapView.location.addOnIndicatorPositionChangedListener(onIndicatorPositionChangedListener)
         mapboxNavigation?.startTripSession(withForegroundService = false)
+        if ((currentCoordinates?.size ?: 0) >= 2) {
+            update()
+        }
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        attachedViews.remove(this)
         cameraController.detach()
         currentRoutesRequestId?.let { mapboxNavigation?.cancelRouteRequest(it) }
         currentMapMatchingRequestId?.let { mapboxNavigation?.cancelMapMatchingRequest(it) }
@@ -994,7 +1126,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         mapboxNavigation?.unregisterVoiceInstructionsObserver(voiceInstructionsObserver)
         mapboxNavigation?.unregisterArrivalObserver(arrivalObserver)
         mapboxNavigation?.unregisterOffRouteObserver(offRouteObserver)
-        if (mapboxNavigation?.isDestroyed != true) {
+        if (attachedViews.isEmpty() && mapboxNavigation?.isDestroyed != true) {
             mapboxNavigation?.stopTripSession()
         }
         speechApi.cancel()
@@ -1046,10 +1178,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     }
 
     private fun onRoutesReady(routes: List<NavigationRoute>) {
+        installedNavigationRoute = routes.firstOrNull()
         mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
         mapboxNavigation?.setNavigationRoutes(routes)
         mapboxNavigation?.startTripSession(withForegroundService = false)
         cameraController.routeInstalled()
+        if (lastSpeedValue == null) {
+            val annotatedSpeed = extractRouteAnnotatedSpeedLimit(lastSpeedUnit == "mph")
+            if (annotatedSpeed != null) {
+                lastSpeedValue = annotatedSpeed
+                lastValidSpeedValue = annotatedSpeed
+                lastSpeedFailed = false
+                refreshSpeedLimit()
+            }
+        }
+        if (plannedMode) refreshInstructions()
     }
 
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
@@ -1067,7 +1210,6 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         update()
     }
     fun setRouteRevision(value: String?) {
-        if (routeRevision != (value ?: "")) latestRouteProgress = null
         routeRevision = value ?: ""
         refreshInstructions()
         update()
@@ -1081,10 +1223,17 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         refreshInstructions()
     }
     fun setPlannedRouteCoordinates(value: List<Point>) {
-        if (plannedCoordinates != value) plannedController.reset()
+        if (plannedCoordinates != value) {
+            plannedController.reset()
+            latestRouteProgress = null
+            installedNavigationRoute = null
+            lastValidSpeedValue = null
+            maneuverView.resetCache()
+        }
         plannedCoordinates = value
         cameraController.setPlannedCoordinates(plannedMode, value)
         drawPlannedRoute()
+        refreshInstructions()
     }
     fun setPlannedRouteProgress(value: Map<String, Double>?) {
         if (!plannedMode || value == null) return
@@ -1127,6 +1276,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         if (previousLocale != currentLocale) {
             plannedController.reset()
             latestRouteProgress = null
+            maneuverView.resetCache()
             speechApi.cancel()
             voiceInstructionsPlayer.clear()
         }
@@ -1188,9 +1338,21 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     fun setInitialLocation(initialLocation: Point?, zoom: Double?) {
         if (initialLocation != null) {
-            val cameraOptions =
-                    CameraOptions.Builder().center(initialLocation).zoom(zoom ?: 14.0).build()
-            mapView.getMapboxMap().setCamera(cameraOptions)
+            if (!hasReceivedLocationFix) {
+                val seedLocation = Location.Builder()
+                    .latitude(initialLocation.latitude())
+                    .longitude(initialLocation.longitude())
+                    .build()
+                navigationLocationProvider.changePosition(location = seedLocation)
+                viewportDataSource.onLocationChanged(seedLocation)
+                viewportDataSource.evaluate()
+            }
+            if (navigationCamera.state == com.mapbox.navigation.ui.maps.camera.state.NavigationCameraState.IDLE) {
+                val cameraOptions =
+                        CameraOptions.Builder().center(initialLocation).zoom(zoom ?: 14.0).build()
+                mapView.getMapboxMap().setCamera(cameraOptions)
+            }
+            cameraController.onLocationUpdated()
         }
     }
 

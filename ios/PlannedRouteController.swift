@@ -46,8 +46,10 @@ final class PlannedRouteController {
             waypoint.separatesLegs = index == 0 || index == coordinates.count - 1
             return waypoint
         }
+        let matchingRadius = min(50.0, max(50.0, tolerance))
+        let validationTolerance = max(tolerance * 2.0, 50.0)
         let options = NavigationMatchOptions(waypoints: waypoints, profileIdentifier: .automobile,
-            queryItems: [URLQueryItem(name: "radiuses", value: coordinates.map { _ in String(min(50, tolerance)) }.joined(separator: ";"))])
+            queryItems: [URLQueryItem(name: "radiuses", value: coordinates.map { _ in String(matchingRadius) }.joined(separator: ";"))])
         options.locale = locale
         options.includesSteps = true
         options.includesVisualInstructions = true
@@ -63,9 +65,9 @@ final class PlannedRouteController {
                 if requestKey == self.activeKey { self.failed(error.localizedDescription, self.activeRevision) }
             case .success(let routes):
                 let shape = routes.mainRoute.route.shape?.coordinates ?? []
-                let validation = PlannedRouteGeometry.validate(coordinates, shape, tolerance: tolerance)
+                let validation = PlannedRouteGeometry.validate(coordinates, shape, tolerance: validationTolerance)
                 guard validation.matches else {
-                    if requestKey == self.activeKey { self.failed(validation.message(tolerance: tolerance, locale: locale), self.activeRevision) }
+                    if requestKey == self.activeKey { self.failed(validation.message(tolerance: validationTolerance, locale: locale), self.activeRevision) }
                     return
                 }
                 if self.cache.count >= 3, let old = self.cache.keys.first(where: { $0 != self.activeKey }) { self.cache.removeValue(forKey: old) }

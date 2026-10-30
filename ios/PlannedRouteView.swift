@@ -24,7 +24,6 @@ extension ExpoMapboxNavigationViewController {
         update()
     }
     func setRouteRevision(_ value: String?) {
-        if routeRevision != (value ?? "") { latestGuidanceProgress = nil }
         routeRevision = value ?? ""
         refreshPlannedInstructions()
         update()
@@ -39,10 +38,16 @@ extension ExpoMapboxNavigationViewController {
     }
     func setPlannedRouteCoordinates(_ coordinates: [CLLocationCoordinate2D]) {
         let unchanged = plannedCoordinates.count == coordinates.count && zip(plannedCoordinates, coordinates).allSatisfy { pair in pair.0.latitude == pair.1.latitude && pair.0.longitude == pair.1.longitude }
-        if !unchanged { plannedController.reset() }
+        if !unchanged {
+            plannedController.reset()
+            latestGuidanceProgress = nil
+            installedGuidanceRoute = nil
+            lastValidSpeedValue = nil
+        }
         plannedCoordinates = coordinates
         cameraController.setCoordinates(coordinates)
         drawPlannedRoute()
+        refreshPlannedInstructions()
     }
     func setPlannedRouteProgress(_ progress: [String: Double]?) {
         guard plannedMode, let progress = progress else { return }
@@ -93,11 +98,22 @@ extension ExpoMapboxNavigationViewController {
         drawPlannedRoute()
     }
     func applyRoutingPolicy() {
+        let detectsReroute = reroutingEnabled && !plannedMode
+        let alternativesEnabled = !(plannedMode || currentDisableAlternativeRoutes == true)
+        let refreshPeriod: TimeInterval? = plannedMode ? nil : 120
+        guard appliedRerouteDetects != detectsReroute
+            || appliedAlternativesEnabled != alternativesEnabled
+            || appliedRouteRefreshPeriod != refreshPeriod else {
+            return
+        }
+        appliedRerouteDetects = detectsReroute
+        appliedAlternativesEnabled = alternativesEnabled
+        appliedRouteRefreshPeriod = refreshPeriod
         var config = ExpoMapboxNavigationViewController.navigationProvider.coreConfig
-        config.routingConfig.rerouteConfig.detectsReroute = reroutingEnabled && !plannedMode
+        config.routingConfig.rerouteConfig.detectsReroute = detectsReroute
         config.routingConfig.fasterRouteDetectionConfig = nil
-        config.routingConfig.alternativeRoutesDetectionConfig = (plannedMode || currentDisableAlternativeRoutes == true) ? nil : .init()
-        config.routingConfig.routeRefreshPeriod = plannedMode ? nil : 120
+        config.routingConfig.alternativeRoutesDetectionConfig = alternativesEnabled ? .init() : nil
+        config.routingConfig.routeRefreshPeriod = refreshPeriod
         ExpoMapboxNavigationViewController.navigationProvider.apply(coreConfig: config)
     }
 }

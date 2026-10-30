@@ -21,6 +21,8 @@ fun main(args: Array<String>) {
         check(strings.cancelNavigation == expected["cancelNavigation"].asString)
         check(strings.defaultMarkerLetter == expected["defaultMarkerLetter"].asString)
         check(strings.invalidRouteGeometry == expected["invalidRouteGeometry"].asString)
+        check(strings.continueOnRoute == expected["continueOnRoute"].asString)
+        check(strings.continueOnRoad("MEX 190D") == expected["continueOnRoad"].asString.replace("{roadName}", "MEX 190D"))
     }
     println("12 Kotlin locale variants and localized navigation states passed")
 }

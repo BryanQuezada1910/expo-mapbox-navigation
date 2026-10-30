@@ -44,9 +44,11 @@ internal class PlannedRouteController(
         // A prefetched request may finish after its window becomes active.
         if (!pending.add(snapshot)) return
         val requestGeneration = generation
+        val matchingRadius = maxOf(50.0, tolerance).coerceAtMost(50.0)
+        val validationTolerance = maxOf(tolerance * 2.0, 50.0)
         val options = MapMatchingOptions.Builder().coordinates(snapshot)
             .waypoints(listOf(0, snapshot.lastIndex)).profile("driving")
-            .radiuses(snapshot.map { minOf(50.0, tolerance) })
+            .radiuses(snapshot.map { matchingRadius })
             .annotations(listOf(DirectionsCriteria.ANNOTATION_MAXSPEED))
             .bannerInstructions(true).voiceInstructions(true).language(language).build()
         val id = navigation()?.requestMapMatching(options, object : MapMatchingAPICallback {
@@ -64,9 +66,9 @@ internal class PlannedRouteController(
                 val routes = result.navigationRoutes.take(1)
                 val encoded = routes.firstOrNull()?.directionsRoute?.geometry()
                 val geometry = encoded?.let { PolylineUtils.decode(it, 6) } ?: emptyList()
-                val validation = PlannedRouteGeometry.validate(snapshot, geometry, tolerance)
+                val validation = PlannedRouteGeometry.validate(snapshot, geometry, validationTolerance)
                 if (!validation.matches) {
-                    if (snapshot == activePoints) failed(validation.message(tolerance, locale), activeRevision)
+                    if (snapshot == activePoints) failed(validation.message(validationTolerance, locale), activeRevision)
                     return
                 }
                 cache[snapshot] = routes

@@ -1,5 +1,7 @@
 {
   "es": {
+    "continueOnRoad": "Continúa por {roadName}",
+    "continueOnRoute": "Continúa por la ruta marcada",
     "speedDataError": "Error de\ndatos",
     "speedUnavailableDescription": "No se pudo obtener el límite de velocidad",
     "speedLimitDescription": "Límite de velocidad: {speed} {unit}",
@@ -20,6 +22,8 @@
     "webUnsupported": "La navegación de Mapbox no está disponible en la web"
   },
   "en": {
+    "continueOnRoad": "Continue on {roadName}",
+    "continueOnRoute": "Continue along the marked route",
     "speedDataError": "Data\nerror",
     "speedUnavailableDescription": "Could not retrieve the speed limit",
     "speedLimitDescription": "Speed limit: {speed} {unit}",

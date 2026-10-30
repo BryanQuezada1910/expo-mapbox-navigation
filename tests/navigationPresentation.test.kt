@@ -26,5 +26,14 @@ fun main(args: Array<String>) {
     }
     check(!SpeedLimitPresentation.from(Double.NaN, "km/h").available)
     check(!SpeedLimitPresentation.from(Double.POSITIVE_INFINITY, "km/h").available)
+    check(plannedContinuationInstruction("MEX 190D", java.util.Locale("es")) == "Continúa por MEX 190D")
+    check(plannedContinuationInstruction("   ", java.util.Locale("es")) == "Continúa por la ruta marcada")
+    check(plannedContinuationInstruction("MEX 190D", java.util.Locale("en")) == "Continue on MEX 190D")
+    check(plannedContinuationInstruction(null, java.util.Locale("en")) == "Continue along the marked route")
+    check(shouldPresentPlannedBanner(planned = true, hasNativeManeuver = false, hasPlannedRoute = true))
+    check(!shouldPresentPlannedBanner(planned = true, hasNativeManeuver = false, hasPlannedRoute = false))
+    check(resolveEffectiveSpeedLimit(liveSpeed = null, routeAnnotatedSpeed = 80.0, lastValidSpeed = 60.0) == 80.0)
+    check(resolveEffectiveSpeedLimit(liveSpeed = null, routeAnnotatedSpeed = null, lastValidSpeed = 80.0) == 80.0)
+    check(resolveEffectiveSpeedLimit(liveSpeed = 90.0, routeAnnotatedSpeed = 80.0, lastValidSpeed = 60.0) == 90.0)
     println("25 navigation presentation cases and nonfinite speed values passed")
 }

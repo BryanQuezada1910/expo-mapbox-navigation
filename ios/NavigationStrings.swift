@@ -4,6 +4,8 @@ import Foundation
 struct NavigationStrings {
     private let english: Bool
     init(locale: Locale = Locale(identifier: "es")) { english = navigationLanguage(locale).lowercased() == "en" }
+    func continueOnRoad(roadName: String) -> String { (english ? "Continue on {roadName}" : "Continúa por {roadName}").replacingOccurrences(of: "{roadName}", with: roadName) }
+    var continueOnRoute: String { (english ? "Continue along the marked route" : "Continúa por la ruta marcada") }
     var speedDataError: String { (english ? "Data\nerror" : "Error de\ndatos") }
     var speedUnavailableDescription: String { (english ? "Could not retrieve the speed limit" : "No se pudo obtener el límite de velocidad") }
     func speedLimitDescription(speed: String, unit: String) -> String { (english ? "Speed limit: {speed} {unit}" : "Límite de velocidad: {speed} {unit}").replacingOccurrences(of: "{speed}", with: speed).replacingOccurrences(of: "{unit}", with: unit) }

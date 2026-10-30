@@ -22,6 +22,15 @@ struct NavigationPresentationTests {
         }
         precondition(!SpeedLimitPresentation.from(speed: .nan, unit: "km/h").available)
         precondition(!SpeedLimitPresentation.from(speed: .infinity, unit: "km/h").available)
+        precondition(plannedContinuationInstruction(roadName: "MEX 190D", locale: Locale(identifier: "es")) == "Continúa por MEX 190D")
+        precondition(plannedContinuationInstruction(roadName: "   ", locale: Locale(identifier: "es")) == "Continúa por la ruta marcada")
+        precondition(plannedContinuationInstruction(roadName: "MEX 190D", locale: Locale(identifier: "en")) == "Continue on MEX 190D")
+        precondition(plannedContinuationInstruction(roadName: nil, locale: Locale(identifier: "en")) == "Continue along the marked route")
+        precondition(shouldPresentPlannedBanner(planned: true, hasNativeManeuver: false, hasPlannedRoute: true))
+        precondition(!shouldPresentPlannedBanner(planned: true, hasNativeManeuver: false, hasPlannedRoute: false))
+        precondition(resolveEffectiveSpeedLimit(liveSpeed: nil, routeAnnotatedSpeed: 80, lastValidSpeed: 60) == 80)
+        precondition(resolveEffectiveSpeedLimit(liveSpeed: nil, routeAnnotatedSpeed: nil, lastValidSpeed: 80) == 80)
+        precondition(resolveEffectiveSpeedLimit(liveSpeed: 90, routeAnnotatedSpeed: 80, lastValidSpeed: 60) == 90)
         print("25 navigation presentation cases and nonfinite speed values passed")
     }
 }

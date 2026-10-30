@@ -15,7 +15,11 @@ internal class NavigationCameraController(
     private val followButton: View
 ) {
     private var started = false
-    private val observer = NavigationCameraStateChangedObserver { updateButtons(it) }
+    private var waitingForLocationToFollow = false
+    private val observer = NavigationCameraStateChangedObserver {
+        if (it != NavigationCameraState.IDLE) waitingForLocationToFollow = false
+        updateButtons(it)
+    }
 
     fun attach() {
         camera.registerNavigationCameraStateChangeObserver(observer)
@@ -37,6 +41,17 @@ internal class NavigationCameraController(
         camera.requestNavigationCameraToFollowing(
             stateTransitionOptions = NavigationCameraTransitionOptions.Builder().maxDuration(0).build()
         )
+        waitingForLocationToFollow = camera.state == NavigationCameraState.IDLE
+    }
+
+    fun onLocationUpdated() {
+        if (!started || !waitingForLocationToFollow) return
+        if (camera.state == NavigationCameraState.IDLE) {
+            camera.requestNavigationCameraToFollowing(
+                stateTransitionOptions = NavigationCameraTransitionOptions.Builder().maxDuration(0).build()
+            )
+        }
+        waitingForLocationToFollow = camera.state == NavigationCameraState.IDLE
     }
 
     private fun updateButtons(state: NavigationCameraState) {

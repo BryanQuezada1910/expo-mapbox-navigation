@@ -19,6 +19,8 @@ struct NavigationLocalizationTests {
             precondition(strings.cancelNavigation == expected["cancelNavigation"])
             precondition(strings.defaultMarkerLetter == expected["defaultMarkerLetter"])
             precondition(strings.invalidRouteGeometry == expected["invalidRouteGeometry"])
+            precondition(strings.continueOnRoute == expected["continueOnRoute"])
+            precondition(strings.continueOnRoad(roadName: "MEX 190D") == expected["continueOnRoad"]!.replacingOccurrences(of: "{roadName}", with: "MEX 190D"))
         }
         print("12 Swift locale variants and localized navigation states passed")
     }
