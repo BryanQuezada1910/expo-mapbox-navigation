@@ -46,7 +46,7 @@ extension ExpoMapboxNavigationViewController {
         let limits = legProgress?.leg.segmentMaximumSpeedLimits
             ?? installedGuidanceRoute?.legs.first?.segmentMaximumSpeedLimits
         guard let limits = limits, !limits.isEmpty else { return nil }
-        let baseIndex = min(max(legProgress?.currentStepProgress.shapeIndex ?? 0, 0), limits.count - 1)
+        let baseIndex = min(max(legProgress?.shapeIndex ?? 0, 0), limits.count - 1)
         for offset in 0...8 {
             let forwardIdx = min(baseIndex + offset, limits.count - 1)
             if let value = limits[forwardIdx]?.converted(to: unit).value, value.isFinite, value > 0 {
@@ -69,7 +69,7 @@ extension ExpoMapboxNavigationViewController {
         }
         lastSpeedUnit = nextUnit
         let unit: UnitSpeed = inUS ? .milesPerHour : .kilometersPerHour
-        let liveSpeed = state.speedLimit.value?.converted(to: unit).value.map { round($0) }
+        let liveSpeed = state.speedLimit.value.map { round($0.converted(to: unit).value) }
         let annotatedSpeed = extractRouteAnnotatedSpeedLimit(unit: unit)
         let resolvedSpeed = resolveEffectiveSpeedLimit(
             liveSpeed: liveSpeed,
