@@ -254,8 +254,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
                     }
                     self.navigationViewController?.navigationMapView?.removeRoutes()
                     self.refreshPlannedInstructions()
-                    self.drawPlannedRoute()
                 }
+                self.drawPlannedRoute()
                self.onEvent?("onRouteProgressChanged", [
                     "distanceRemaining": progressState!.routeProgress.distanceRemaining,
                     "distanceTraveled": progressState!.routeProgress.distanceTraveled,
@@ -434,6 +434,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func setCoordinates(coordinates: Array<CLLocationCoordinate2D>) {
         currentCoordinates = coordinates
+        drawPlannedRoute()
         update()
     }
 
@@ -696,8 +697,8 @@ class ExpoMapboxNavigationViewController: UIViewController {
                 return waypoint
             }
 
+            drawPlannedRoute()
             if plannedMode {
-                drawPlannedRoute()
                 plannedController.activate(currentCoordinates!, next: prefetchCoordinates, revision: routeRevision, tolerance: routeDeviationTolerance, locale: currentLocale)
             } else if(isUsingRouteMatchingApi){
                 calculateMapMatchingRoutes(waypoints: waypoints)
@@ -890,6 +891,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
         let navigationMapView = navigationViewController.navigationMapView
         navigationMapView!.puckType = .puck2D(.navigationDefault)
+        navigationMapView!.waypointColor = .clear
+        navigationMapView!.waypointStrokeColor = .clear
+        plannedStyleSubscription = navigationMapView!.mapView.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
         if plannedMode {
             navigationMapView!.routeColor = .clear
             navigationMapView!.routeAlternateColor = .clear
@@ -897,9 +901,6 @@ class ExpoMapboxNavigationViewController: UIViewController {
             navigationMapView!.traversedRouteColor = .clear
             navigationMapView!.maneuverArrowColor = .clear
             navigationMapView!.maneuverArrowStrokeColor = .clear
-            navigationMapView!.waypointColor = .clear
-            navigationMapView!.waypointStrokeColor = .clear
-            plannedStyleSubscription = navigationMapView!.mapView.mapboxMap.onStyleLoaded.observe { [weak self] _ in self?.drawPlannedRoute() }
         }
 
         if(initialLocation != nil && newNavigationControllerRequired){

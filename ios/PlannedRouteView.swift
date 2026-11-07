@@ -12,6 +12,7 @@ extension ExpoMapboxNavigationViewController {
             guidanceWasSuppressed = false
         }
         cameraController.configureViewport(planned: plannedMode, coordinates: plannedCoordinates)
+        drawPlannedRoute()
         refreshPlannedInstructions()
         updateTripProgressVisibility()
         update()
@@ -74,9 +75,11 @@ extension ExpoMapboxNavigationViewController {
         view.bringSubviewToFront(plannedProgressLabel!)
     }
     func drawPlannedRoute() {
-        guard plannedMode else { return }
+        let coordinates = plannedMode
+            ? (plannedCoordinates.count >= 2 ? plannedCoordinates : (currentCoordinates ?? []))
+            : (currentCoordinates ?? [])
         if let map = navigationViewController?.navigationMapView?.mapView ?? plannedFallbackMap {
-            plannedRenderer.draw(on: map, coordinates: plannedCoordinates)
+            plannedRenderer.draw(on: map, coordinates: coordinates, includeRouteLine: plannedMode)
         }
     }
 

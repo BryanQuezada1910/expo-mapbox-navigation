@@ -455,7 +455,11 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                                 result.navigationRoutes,
                                 alternativesMetadata
                         ) { value ->
-                            mapboxStyle?.let { routeLineView.renderRouteDrawData(it, value) }
+                            mapboxStyle?.let {
+                                routeLineView.renderRouteDrawData(it, value)
+                                routeLineView.hideOriginAndDestinationPoints(it)
+                                drawPlannedRoute()
+                            }
                         }
                     }
 
@@ -1199,6 +1203,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     fun setRouteMode(value: String?) {
         plannedMode = value == "planned"
         cameraController.setPlannedCoordinates(plannedMode, plannedCoordinates)
+        drawPlannedRoute()
         refreshInstructions()
         update()
     }
@@ -1244,7 +1249,12 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         tripProgressArrivalTimeTextView.text = ""
     }
     private fun drawPlannedRoute() {
-        if (plannedMode) mapboxStyle?.let { PlannedRouteRenderer.draw(it, plannedCoordinates) }
+        val coordinates = if (plannedMode) {
+            if (plannedCoordinates.size >= 2) plannedCoordinates else (currentCoordinates ?: emptyList())
+        } else {
+            currentCoordinates ?: emptyList()
+        }
+        mapboxStyle?.let { PlannedRouteRenderer.draw(it, coordinates, plannedMode) }
     }
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     private fun update() {
@@ -1254,6 +1264,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
     fun setCoordinates(coordinates: List<Point>) {
         currentCoordinates = coordinates
+        drawPlannedRoute()
         update()
     }
 
@@ -1644,8 +1655,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
 
         mapboxNavigation?.setRerouteEnabled(reroutingEnabled && !plannedMode)
         if (currentCoordinates != null && currentCoordinates!!.size >= 2) {
+            drawPlannedRoute()
             if (plannedMode) {
-                drawPlannedRoute()
                 plannedController.activate(currentCoordinates!!, prefetchCoordinates, routeRevision, routeDeviationTolerance, currentLocale.toLanguageTag())
             } else if (isUsingRouteMatchingApi) {
                 requestMapMatchingRoutes()
