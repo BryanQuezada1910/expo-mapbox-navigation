@@ -169,6 +169,8 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private var lastValidSpeedValue: Double? = null
     private var lastSpeedUnit = "km/h"
     private var lastSpeedFailed = false
+    private var lastMatchedLocation: Location? = null
+    private var showSpeedLimit = false
     private var lastPlannedProgress: Map<String, Double>? = null
     private var currentWaypointIndices: List<Int>? = null
     private var currentRoutesRequestId: Long? = null
@@ -299,6 +301,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     private val speedLimitViewId = 8
     private val speedLimitContainer = SpeedLimitIndicatorView(context).apply {
         id = speedLimitViewId
+        visibility = View.GONE
         parentConstraintLayout.addView(this)
     }
     private val speedInfoApi = MapboxSpeedInfoApi()
@@ -488,6 +491,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                             lastValidSpeedValue = annotatedSpeed
                             lastSpeedFailed = false
                             refreshSpeedLimit()
+                            emitSpeedLimitChanged(lastMatchedLocation)
                         }
                     }
                     refreshInstructions()
@@ -544,8 +548,9 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                         lastKnownRoadName = roadLabel
                     }
                     // Speed metadata describes the current road, independently of route guidance.
-                    updateSpeedLimit(locationMatcherResult)
                     val enhancedLocation = locationMatcherResult.enhancedLocation
+                    lastMatchedLocation = enhancedLocation
+                    updateSpeedLimit(locationMatcherResult)
                     if (plannedMode && !hasReceivedRawLocation) {
                         onPlannedRouteLocation(
                             mapOf(
@@ -757,17 +762,23 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
         }
         lastSpeedValue = resolvedSpeed
         refreshSpeedLimit()
+        emitSpeedLimitChanged(location)
+    }
+
+    private fun emitSpeedLimitChanged(location: Location?) {
+        val currentLocation = location ?: return
         onSpeedLimitChanged(mapOf(
             "speedLimit" to lastSpeedValue?.takeIf { it.isFinite() && it > 0 },
             "unit" to lastSpeedUnit,
-            "latitude" to location.latitude,
-            "longitude" to location.longitude,
+            "latitude" to currentLocation.latitude,
+            "longitude" to currentLocation.longitude,
             "timestamp" to System.currentTimeMillis().toDouble()
         ))
     }
 
     private fun refreshSpeedLimit() {
         speedLimitContainer.render(SpeedLimitPresentation.from(lastSpeedValue, lastSpeedUnit, lastSpeedFailed, currentLocale))
+        speedLimitContainer.visibility = if (showSpeedLimit) View.VISIBLE else View.GONE
     }
 
     private fun refreshControlLabels() {
@@ -981,12 +992,13 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
             )
             constrainWidth(speedLimitViewId, speedLimitSize)
             constrainHeight(speedLimitViewId, speedLimitSize)
+            setVisibility(speedLimitViewId, if (showSpeedLimit) View.VISIBLE else View.GONE)
 
-            // Add SoundButton constraints (below speed limit view)
+            // Add SoundButton constraints (below speed limit view when visible, or maneuver view when hidden)
             connect(
                     soundButtonId,
                     ConstraintSet.TOP,
-                    speedLimitViewId,
+                    if (showSpeedLimit) speedLimitViewId else maneuverViewId,
                     ConstraintSet.BOTTOM,
                     (8 * PIXEL_DENSITY).toInt()
             )
@@ -1194,6 +1206,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 lastValidSpeedValue = annotatedSpeed
                 lastSpeedFailed = false
                 refreshSpeedLimit()
+                emitSpeedLimitChanged(lastMatchedLocation)
             }
         }
         if (plannedMode) refreshInstructions()
@@ -1492,6 +1505,28 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     fun setShowCancelButton(show: Boolean?) {
         showCancelButton = show ?: true
         updateTripProgressVisibility()
+    }
+
+    fun setShowSpeedLimit(show: Boolean?) {
+        showSpeedLimit = show ?: false
+        updateSpeedLimitVisibility()
+    }
+
+    private fun updateSpeedLimitVisibility() {
+        val visible = showSpeedLimit
+        speedLimitContainer.visibility = if (visible) View.VISIBLE else View.GONE
+        ConstraintSet().apply {
+            clone(parentConstraintLayout)
+            setVisibility(speedLimitViewId, if (visible) View.VISIBLE else View.GONE)
+            connect(
+                soundButtonId,
+                ConstraintSet.TOP,
+                if (visible) speedLimitViewId else maneuverViewId,
+                ConstraintSet.BOTTOM,
+                (8 * PIXEL_DENSITY).toInt()
+            )
+            applyTo(parentConstraintLayout)
+        }
     }
 
     private fun updateTripProgressVisibility() {

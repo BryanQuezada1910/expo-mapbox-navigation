@@ -5,18 +5,28 @@ import CoreLocation
 import UIKit
 
 extension ExpoMapboxNavigationViewController {
+    func setShowSpeedLimit(show: Bool?) {
+        showSpeedLimit = show ?? false
+        installNavigationIndicators()
+    }
+
     func installNavigationIndicators() {
         loadViewIfNeeded()
+        navigationViewController?.navigationView.speedLimitView.isAlwaysHidden = true
+        if let fallbackBanner = plannedFallbackBanner, !fallbackBanner.isHidden {
+            view.bringSubviewToFront(fallbackBanner)
+        }
+        guard showSpeedLimit else {
+            speedLimitIndicator.isHidden = true
+            return
+        }
         if speedLimitIndicator.superview == nil {
             view.addSubview(speedLimitIndicator)
             NSLayoutConstraint.activate([
                 speedLimitIndicator.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16)
             ])
         }
-        navigationViewController?.navigationView.speedLimitView.isAlwaysHidden = true
-        if let fallbackBanner = plannedFallbackBanner, !fallbackBanner.isHidden {
-            view.bringSubviewToFront(fallbackBanner)
-        }
+        speedLimitIndicator.isHidden = false
         view.bringSubviewToFront(speedLimitIndicator)
         positionSpeedLimitIndicator()
     }
@@ -81,8 +91,13 @@ extension ExpoMapboxNavigationViewController {
         }
         lastSpeedValue = resolvedSpeed
         refreshSpeedLimit()
+        emitSpeedLimitChanged(coordinate: coordinate)
+    }
+
+    func emitSpeedLimitChanged(coordinate: CLLocationCoordinate2D?) {
+        guard let coordinate = coordinate else { return }
         onEvent?("onSpeedLimitChanged", [
-            "speedLimit": resolvedSpeed.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }.map { $0 as Any } ?? NSNull(),
+            "speedLimit": lastSpeedValue.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }.map { $0 as Any } ?? NSNull(),
             "unit": lastSpeedUnit,
             "latitude": coordinate.latitude,
             "longitude": coordinate.longitude,

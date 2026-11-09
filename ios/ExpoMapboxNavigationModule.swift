@@ -124,6 +124,10 @@ public class ExpoMapboxNavigationModule: Module {
         view.controller.setShowTripProgress(show: show)
       }
 
+      Prop("showSpeedLimit") { (view: ExpoMapboxNavigationView, show: Bool?) in
+        view.controller.setShowSpeedLimit(show: show)
+      }
+
       Prop("showCancelButton") { (view: ExpoMapboxNavigationView, show: Bool?) in
         view.controller.setShowCancelButton(show: show)
       }

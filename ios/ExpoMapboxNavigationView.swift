@@ -156,6 +156,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var bottomLegendLabel: UILabel? = nil
     var showCancelButton: Bool = true
     var showTripProgress: Bool = true
+    var showSpeedLimit: Bool = false
     var currentBottomLegend: String? = nil
 
     /// Callback for dispatching events back to the ExpoView.
@@ -250,6 +251,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                             self.lastSpeedValue = annotatedSpeed
                             self.lastValidSpeedValue = annotatedSpeed
                             self.refreshSpeedLimit()
+                            self.emitSpeedLimitChanged(coordinate: self.navigation?.currentLocationMatching?.location.coordinate)
                         }
                     }
                     self.navigationViewController?.navigationMapView?.removeRoutes()
@@ -833,6 +835,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
                     lastSpeedValue = annotatedSpeed
                     lastValidSpeedValue = annotatedSpeed
                     refreshSpeedLimit()
+                    emitSpeedLimitChanged(coordinate: navigation?.currentLocationMatching?.location.coordinate)
                 }
             }
         }

@@ -141,6 +141,11 @@ export type ExpoMapboxNavigationViewProps = {
    */
   showTripProgress?: boolean;
   /**
+   * Shows the native speed limit indicator on the map.
+   * Defaults to false; speed limit updates are still emitted through onSpeedLimitChanged.
+   */
+  showSpeedLimit?: boolean;
+  /**
    * Texto a mostrar en la parte inferior sobre o dentro del banner nativo
    */
   bottomLegend?: string;

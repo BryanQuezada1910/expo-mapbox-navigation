@@ -152,6 +152,10 @@ class ExpoMapboxNavigationModule : Module() {
         view.setShowTripProgress(show)
       }
 
+      Prop("showSpeedLimit") { view: ExpoMapboxNavigationView, show: Boolean? ->
+        view.setShowSpeedLimit(show)
+      }
+
       Prop("showCancelButton") { view: ExpoMapboxNavigationView, show: Boolean? ->
         view.setShowCancelButton(show)
       }
