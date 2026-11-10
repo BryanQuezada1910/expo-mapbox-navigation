@@ -13,6 +13,17 @@ fun main() {
   check((follow.visibility == View.VISIBLE) != following)
  }
  controller.attach(); checkButtons(false)
+ val followingOptions = viewport.options.followingFrameOptions
+ check(followingOptions.minZoom == DEFAULT_FOLLOWING_MIN_ZOOM && followingOptions.maxZoom == DEFAULT_FOLLOWING_MAX_ZOOM)
+ check(followingOptions.defaultPitch == DEFAULT_FOLLOWING_PITCH && !followingOptions.maximizeViewableGeometryWhenPitchZero)
+ check(followingOptions.intersectionDensityCalculation.averageDistanceMultiplier == DEFAULT_INTERSECTION_DENSITY_MULTIPLIER)
+ check(followingOptions.frameGeometryAfterManeuver.distanceToFrameAfterManeuver == DEFAULT_POST_MANEUVER_FRAMING_DISTANCE)
+ check(followingOptions.pitchNearManeuvers.triggerDistanceFromManeuver == DEFAULT_PITCH_NEAR_MANEUVER_DISTANCE)
+ check(viewport.zoomOverride == null)
+ controller.configureFollowingCamera(17.0)
+ check(followingOptions.minZoom == 17.0 && followingOptions.maxZoom == DEFAULT_FOLLOWING_MAX_ZOOM)
+ controller.configureFollowingCamera(null)
+ check(followingOptions.minZoom == DEFAULT_FOLLOWING_MIN_ZOOM && followingOptions.maxZoom == DEFAULT_FOLLOWING_MAX_ZOOM)
  controller.routeInstalled(); checkButtons(true)
  val full = (0..200).map { Point.fromLngLat(-99.0 + it / 1000.0, 19.0) }
  controller.setPlannedCoordinates(true, full)

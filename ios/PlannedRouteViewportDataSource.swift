@@ -37,8 +37,15 @@ final class PlannedRouteViewportDataSource: ViewportDataSource {
     }
 
     private func framingFullRoute(_ original: NavigationCameraOptions) -> NavigationCameraOptions {
+        var result = original
+        let zoomRange = base.options.followingCameraOptions.zoomRange
+        if let currentZoom = result.followingCamera.zoom {
+            result.followingCamera.zoom = min(max(currentZoom, zoomRange.lowerBound), zoomRange.upperBound)
+        } else {
+            result.followingCamera.zoom = zoomRange.lowerBound
+        }
         guard coordinates.count >= 2, let mapView = mapView,
-              mapView.bounds.width > 0, mapView.bounds.height > 0 else { return original }
+              mapView.bounds.width > 0, mapView.bounds.height > 0 else { return result }
         let size = mapView.bounds.size
         let padding = UIEdgeInsets(
             top: min(max(viewportPadding.top, 100), size.height * 0.35),
@@ -55,7 +62,6 @@ final class PlannedRouteViewportDataSource: ViewportDataSource {
             cachedSize = size
             cachedPadding = padding
         }
-        var result = original
         if let overview = cachedOverview { result.overviewCamera = overview }
         return result
     }

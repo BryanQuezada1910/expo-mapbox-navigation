@@ -1082,21 +1082,34 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 )
         val portraitFollowingPadding =
                 EdgeInsets(
-                        180.0 * PIXEL_DENSITY,
+                        140.0 * PIXEL_DENSITY,
                         40.0 * PIXEL_DENSITY,
-                        150.0 * PIXEL_DENSITY,
+                        110.0 * PIXEL_DENSITY,
                         40.0 * PIXEL_DENSITY
                 )
         val landscapeFollowingPadding =
                 EdgeInsets(
                         30.0 * PIXEL_DENSITY,
                         380.0 * PIXEL_DENSITY,
-                        110.0 * PIXEL_DENSITY,
+                        90.0 * PIXEL_DENSITY,
                         40.0 * PIXEL_DENSITY
                 )
 
         return MapboxNavigationViewportDataSource(mapboxMap).apply {
-            options.followingFrameOptions.focalPoint = FocalPoint(0.5, 0.9)
+            options.followingFrameOptions.apply {
+                defaultPitch = DEFAULT_FOLLOWING_PITCH
+                minZoom = DEFAULT_FOLLOWING_MIN_ZOOM
+                maxZoom = DEFAULT_FOLLOWING_MAX_ZOOM
+                focalPoint = FocalPoint(DEFAULT_FOLLOWING_FOCAL_X, DEFAULT_FOLLOWING_FOCAL_Y)
+                maximizeViewableGeometryWhenPitchZero = false
+                intersectionDensityCalculation.enabled = true
+                intersectionDensityCalculation.averageDistanceMultiplier = DEFAULT_INTERSECTION_DENSITY_MULTIPLIER
+                frameGeometryAfterManeuver.enabled = true
+                frameGeometryAfterManeuver.distanceToCoalesceCompoundManeuvers = DEFAULT_COMPOUND_MANEUVER_DISTANCE
+                frameGeometryAfterManeuver.distanceToFrameAfterManeuver = DEFAULT_POST_MANEUVER_FRAMING_DISTANCE
+                pitchNearManeuvers.enabled = true
+                pitchNearManeuvers.triggerDistanceFromManeuver = DEFAULT_PITCH_NEAR_MANEUVER_DISTANCE
+            }
             if (context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
             ) {
                 followingPadding = landscapeFollowingPadding
@@ -1372,8 +1385,14 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
                 viewportDataSource.evaluate()
             }
             if (navigationCamera.state == com.mapbox.navigation.ui.maps.camera.state.NavigationCameraState.IDLE) {
+                val initialZoom = (zoom ?: currentFollowingZoom ?: DEFAULT_FOLLOWING_MIN_ZOOM)
+                    .coerceAtLeast(DEFAULT_FOLLOWING_MIN_ZOOM)
                 val cameraOptions =
-                        CameraOptions.Builder().center(initialLocation).zoom(zoom ?: 14.0).build()
+                        CameraOptions.Builder()
+                            .center(initialLocation)
+                            .zoom(initialZoom)
+                            .pitch(DEFAULT_FOLLOWING_PITCH)
+                            .build()
                 mapView.getMapboxMap().setCamera(cameraOptions)
             }
             cameraController.onLocationUpdated()
@@ -1401,8 +1420,7 @@ class ExpoMapboxNavigationView(context: Context, appContext: AppContext) :
     @com.mapbox.navigation.base.ExperimentalPreviewMapboxNavigationAPI
     fun setFollowingZoom(followingZoom: Double?) {
         currentFollowingZoom = followingZoom
-        viewportDataSource.followingZoomPropertyOverride(followingZoom)
-        viewportDataSource.evaluate()
+        cameraController.configureFollowingCamera(followingZoom)
     }
 
     fun recenterMap() {

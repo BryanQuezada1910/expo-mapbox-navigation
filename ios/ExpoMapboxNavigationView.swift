@@ -193,7 +193,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             let coordinate = state.location.coordinate
             self.onEvent?("onPlannedRouteLocation", ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
             if let map = self.plannedFallbackMap {
-                map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: self.initialLocationZoom ?? 15))
+                map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: self.effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
             }
         }
 
@@ -507,8 +507,13 @@ class ExpoMapboxNavigationViewController: UIViewController {
         update()
     }
 
+    var effectiveInitialFollowingZoom: Double {
+        let requested = currentFollowingZoom ?? initialLocationZoom ?? NavigationCameraController.defaultFollowingMinZoom
+        return max(requested, NavigationCameraController.defaultFollowingMinZoom)
+    }
+
     func recenterMap(){
-        if let map = plannedFallbackMap, let coordinate = navigation?.currentLocationMatching?.location.coordinate { map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: initialLocationZoom ?? 15)); return }
+        if let map = plannedFallbackMap, let coordinate = navigation?.currentLocationMatching?.location.coordinate { map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch))); return }
         let navigationMapView = navigationViewController?.navigationMapView
         navigationMapView?.navigationCamera.update(cameraState: .following)
     }
@@ -526,20 +531,14 @@ class ExpoMapboxNavigationViewController: UIViewController {
         initialLocationZoom = zoom
         if let navigationMapView = navigationViewController?.navigationMapView {
             if navigationMapView.navigationCamera.currentCameraState == .idle {
-                navigationMapView.mapView.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: zoom ?? 15))
+                navigationMapView.mapView.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
             }
         }
     }
 
     func setFollowingZoom(followingZoom: Double?){
-        let navigationMapView = navigationViewController?.navigationMapView
         currentFollowingZoom = followingZoom
-        if(navigationMapView != nil && followingZoom != nil){
-            let newDataSource = MobileViewportDataSource(navigationMapView!.mapView)
-            newDataSource.options.followingCameraOptions.zoomRange = followingZoom!...followingZoom!
-            navigationMapView?.navigationCamera.viewportDataSource = newDataSource
-            cameraController.configureViewport(planned: plannedMode, coordinates: plannedCoordinates)
-        }
+        cameraController.setFollowingZoom(followingZoom)
     }
 
     func setMarkers(markers: Array<Dictionary<String, Any>>?) {
@@ -907,7 +906,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         if(initialLocation != nil && newNavigationControllerRequired){
-            navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: initialLocationZoom ?? 15))
+            navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
         }
 
         let style = currentMapStyle != nil ? StyleURI(rawValue: currentMapStyle!) : StyleURI.streets
@@ -971,6 +970,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         drawPlannedRoute()
         if let label = plannedProgressLabel { view.bringSubviewToFront(label) }
         cameraController.setLocale(currentLocale)
+        cameraController.setFollowingZoom(currentFollowingZoom)
         cameraController.attach(to: navigationViewController, planned: plannedMode, coordinates: plannedCoordinates)
         mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
         cameraController.restore(previousCameraState)

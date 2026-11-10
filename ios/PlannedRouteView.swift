@@ -95,7 +95,7 @@ extension ExpoMapboxNavigationViewController {
             try? map.mapboxMap.localizeLabels(into: self.currentLocale)
             self.drawPlannedRoute()
         }
-        if let location = initialLocation { map.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: initialLocationZoom ?? 15)) }
+        if let location = initialLocation { map.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch))) }
         tripSession?.startFreeDrive()
         refreshPlannedInstructions()
         drawPlannedRoute()
