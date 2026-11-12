@@ -18,6 +18,7 @@ final class NavigationCameraController: NSObject {
     let policy = NavigationCameraPolicy()
 
     private weak var controller: NavigationViewController?
+    private weak var nativeOverviewButton: UIButton?
     private weak var controlsView: NavigationCameraControlsView?
     private weak var fallbackMapView: MapView?
     private weak var observedMapView: MapView?
@@ -106,8 +107,18 @@ final class NavigationCameraController: NSObject {
 
         if self.controller !== controller {
             self.controller = controller
-            controller.floatingButtons = controller.floatingButtons?.filter { $0 !== controller.overviewButton }
-            controller.overviewButton.isHidden = true
+            let buttons = controller.floatingButtons ?? []
+            let overview = buttons.first { button in
+                button.allTargets.contains { target in
+                    button.actions(forTarget: target, forControlEvent: .touchUpInside)?.contains {
+                        $0.localizedCaseInsensitiveContains("overview")
+                    } == true
+                }
+            } ?? buttons.first
+            nativeOverviewButton = overview
+            if let overview = overview {
+                controller.floatingButtons = buttons.filter { $0 !== overview }
+            }
             stateSubscription?.cancel()
             stateSubscription = controller.navigationMapView?.navigationCamera.cameraStates.sink { [weak self] state in
                 guard let self = self else { return }
@@ -228,6 +239,7 @@ final class NavigationCameraController: NSObject {
         stateSubscription = nil
         detachGestureObservers()
         plannedViewport = nil
+        nativeOverviewButton = nil
         controller = nil
         fallbackMapView = nil
         fallbackCoordinates = []
@@ -244,8 +256,12 @@ final class NavigationCameraController: NSObject {
     }
 
     private func hideNativeCameraButtons() {
+        if let overview = nativeOverviewButton {
+            overview.isHidden = true
+            overview.alpha = 0
+            overview.isUserInteractionEnabled = false
+        }
         guard let controller = controller else { return }
-        controller.overviewButton.isHidden = true
         for button in controller.navigationView.findViews(subclassOf: ResumeButton.self) {
             button.isHidden = true
             button.alpha = 0
