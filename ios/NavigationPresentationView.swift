@@ -16,6 +16,7 @@ extension ExpoMapboxNavigationViewController {
         if let fallbackBanner = plannedFallbackBanner, !fallbackBanner.isHidden {
             view.bringSubviewToFront(fallbackBanner)
         }
+        installCameraControls()
         guard showSpeedLimit else {
             speedLimitIndicator.isHidden = true
             return
@@ -29,6 +30,54 @@ extension ExpoMapboxNavigationViewController {
         speedLimitIndicator.isHidden = false
         view.bringSubviewToFront(speedLimitIndicator)
         positionSpeedLimitIndicator()
+    }
+
+    func installCameraControls() {
+        if cameraControlsView.superview == nil {
+            cameraControlsView.onOverviewTap = { [weak self] in
+                self?.cameraController.requestOverview()
+            }
+            cameraControlsView.onRecenterTap = { [weak self] in
+                self?.recenterMap()
+            }
+            view.addSubview(cameraControlsView)
+            NSLayoutConstraint.activate([
+                cameraControlsView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+            ])
+            cameraController.bindControlsView(cameraControlsView)
+        }
+        view.bringSubviewToFront(cameraControlsView)
+        positionCameraControls()
+        cameraController.updateControls()
+    }
+
+    func positionCameraControls() {
+        guard cameraControlsView.superview != nil else { return }
+        cameraControlsTopConstraint?.isActive = false
+        let mountedController = navigationViewController.flatMap { controller in
+            controller.viewIfLoaded?.isDescendant(of: view) == true ? controller : nil
+        }
+        let floatingStack = mountedController?.navigationView.floatingStackView
+        let hasVisibleFloatingButtons = floatingStack.map { stack in
+            stack.superview != nil && !stack.isHidden && stack.arrangedSubviews.contains { !$0.isHidden }
+        } ?? false
+        let nativeBanner = mountedController?.navigationView.topBannerContainerView
+        let fallbackBanner = plannedFallbackBanner.flatMap {
+            $0.superview != nil && !$0.isHidden ? $0 : nil
+        }
+
+        let constraint: NSLayoutConstraint
+        if hasVisibleFloatingButtons, let stack = floatingStack {
+            constraint = cameraControlsView.topAnchor.constraint(equalTo: stack.bottomAnchor, constant: 10)
+        } else if let banner = nativeBanner, !banner.isHidden {
+            constraint = cameraControlsView.topAnchor.constraint(equalTo: banner.bottomAnchor, constant: 12)
+        } else if let banner = fallbackBanner {
+            constraint = cameraControlsView.topAnchor.constraint(equalTo: banner.bottomAnchor, constant: 12)
+        } else {
+            constraint = cameraControlsView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+        }
+        cameraControlsTopConstraint = constraint
+        constraint.isActive = true
     }
 
     func positionSpeedLimitIndicator() {

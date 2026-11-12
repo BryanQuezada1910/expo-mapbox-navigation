@@ -97,6 +97,9 @@ class ExpoMapboxNavigationViewController: UIViewController {
     var guidanceStatus = "preparing"
     var isOnPlannedRoute: Bool?
     let cameraController = NavigationCameraController()
+    let cameraControlsView = NavigationCameraControlsView()
+    var cameraControlsTopConstraint: NSLayoutConstraint?
+    var hasAppliedInitialCamera = false
     var installedRouteRevision = ""
     var installedGuidanceRoute: Route?
     var installedNavigationRoutes: NavigationRoutes?
@@ -192,9 +195,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
             guard self.plannedMode else { return }
             let coordinate = state.location.coordinate
             self.onEvent?("onPlannedRouteLocation", ["latitude": coordinate.latitude, "longitude": coordinate.longitude])
-            if let map = self.plannedFallbackMap {
-                map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: self.effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
-            }
+            self.cameraController.updateFallbackLocation(coordinate, zoom: self.effectiveInitialFollowingZoom)
         }
 
         bannerInstructionsCancellable = navigation!.bannerInstructions.sink { [weak self] _ in
@@ -317,6 +318,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func stopPlannedRoute() {
+        hasAppliedInitialCamera = false
         cameraController.detach()
         plannedController.reset()
         locationMatchingSubscription?.cancel()
@@ -346,6 +348,12 @@ class ExpoMapboxNavigationViewController: UIViewController {
         ExpoMapboxNavigationViewController.activeController = self
         installNavigationIndicators()
         Task { @MainActor [weak self] in self?.tripSession?.startFreeDrive() }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        positionCameraControls()
+        positionSpeedLimitIndicator()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -513,9 +521,10 @@ class ExpoMapboxNavigationViewController: UIViewController {
     }
 
     func recenterMap(){
-        if let map = plannedFallbackMap, let coordinate = navigation?.currentLocationMatching?.location.coordinate { map.mapboxMap.setCamera(to: CameraOptions(center: coordinate, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch))); return }
-        let navigationMapView = navigationViewController?.navigationMapView
-        navigationMapView?.navigationCamera.update(cameraState: .following)
+        cameraController.requestFollowing(
+            fallbackCoordinate: navigation?.currentLocationMatching?.location.coordinate ?? initialLocation,
+            zoom: effectiveInitialFollowingZoom
+        )
     }
 
     func setIsMuted(isMuted: Bool?){
@@ -529,8 +538,11 @@ class ExpoMapboxNavigationViewController: UIViewController {
     func setInitialLocation(location: CLLocationCoordinate2D, zoom: Double?){
         initialLocation = location
         initialLocationZoom = zoom
+        cameraController.setFallbackInitialLocation(location, zoom: effectiveInitialFollowingZoom)
+        guard !hasAppliedInitialCamera, cameraController.policy.mode == .following else { return }
         if let navigationMapView = navigationViewController?.navigationMapView {
             if navigationMapView.navigationCamera.currentCameraState == .idle {
+                hasAppliedInitialCamera = true
                 navigationMapView.mapView.mapboxMap.setCamera(to: CameraOptions(center: location, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
             }
         }
@@ -824,6 +836,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
 
     func onRoutesCalculated(navigationRoutes: NavigationRoutes){
         let previousCameraState = navigationViewController?.navigationMapView?.navigationCamera.currentCameraState
+            ?? (plannedFallbackMap != nil ? cameraController.currentNavigationCameraState : nil)
         installedNavigationRoutes = navigationRoutes
         if plannedMode {
             installedRouteRevision = routeRevision
@@ -906,6 +919,7 @@ class ExpoMapboxNavigationViewController: UIViewController {
         }
 
         if(initialLocation != nil && newNavigationControllerRequired){
+            hasAppliedInitialCamera = true
             navigationMapView!.mapView.mapboxMap.setCamera(to: CameraOptions(center: initialLocation!, zoom: effectiveInitialFollowingZoom, pitch: CGFloat(NavigationCameraController.defaultFollowingPitch)))
         }
 
@@ -965,15 +979,20 @@ class ExpoMapboxNavigationViewController: UIViewController {
         updateTripProgressVisibility()
         plannedFallbackMap?.removeFromSuperview()
         plannedFallbackMap = nil
+        cameraController.setLocale(currentLocale)
+        cameraController.setFollowingZoom(currentFollowingZoom)
+        cameraController.attach(
+            to: navigationViewController,
+            planned: plannedMode,
+            coordinates: plannedCoordinates,
+            preserving: previousCameraState
+        )
+        mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
+        cameraController.restore(previousCameraState)
         installNavigationIndicators()
         refreshPlannedInstructions()
         drawPlannedRoute()
         if let label = plannedProgressLabel { view.bringSubviewToFront(label) }
-        cameraController.setLocale(currentLocale)
-        cameraController.setFollowingZoom(currentFollowingZoom)
-        cameraController.attach(to: navigationViewController, planned: plannedMode, coordinates: plannedCoordinates)
-        mapboxNavigation!.tripSession().startActiveGuidance(with: navigationRoutes, startLegIndex: 0)
-        cameraController.restore(previousCameraState)
     }
 }
 extension ExpoMapboxNavigationViewController: NavigationViewControllerDelegate {
